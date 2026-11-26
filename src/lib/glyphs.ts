@@ -1,0 +1,65 @@
+/**
+ * Repères typographiques. L'application n'embarque plus aucune image SVG : les rares repères qui
+ * restent (flèches, croix, coche) sont de simples caractères ; les autres sont vides et ne
+ * s'affichent pas — le libellé du bouton suffit.
+ */
+export const add = '+';
+export const airplaneOutline = '';
+export const alertCircle = '!';
+export const alertCircleOutline = '!';
+export const apps = '';
+export const appsOutline = '';
+export const archiveOutline = '';
+export const arrowBack = '←';
+export const arrowDown = '↓';
+export const arrowForward = '→';
+export const arrowUndoOutline = '';
+export const arrowUp = '↑';
+export const bagHandleOutline = '';
+export const basket = '';
+export const basketOutline = '';
+export const boatOutline = '';
+export const cameraOutline = '';
+export const cardOutline = '';
+export const chatbubbleOutline = '';
+export const checkmark = '✓';
+export const checkmarkCircle = '✓';
+export const chevronForward = '›';
+export const close = '×';
+export const closeCircle = '×';
+export const cloudOfflineOutline = '';
+export const copyOutline = '';
+export const createOutline = '';
+export const cubeOutline = '';
+export const documentTextOutline = '';
+export const ellipsisHorizontal = '···';
+export const eyeOffOutline = '';
+export const eyeOutline = '';
+export const flaskOutline = '';
+export const heart = '';
+export const hourglassOutline = '';
+export const imageOutline = '';
+export const informationCircleOutline = '';
+export const keyOutline = '';
+export const leaf = '';
+export const leafOutline = '';
+export const linkOutline = '';
+export const lockClosedOutline = '';
+export const logOutOutline = '';
+export const logoGoogle = '';
+export const peopleOutline = '';
+export const personOutline = '';
+export const pricetag = '';
+export const pricetagOutline = '';
+export const radio = '';
+export const radioOutline = '';
+export const refreshOutline = '';
+export const search = '';
+export const settings = '';
+export const settingsOutline = '';
+export const shieldCheckmarkOutline = '';
+export const star = '★';
+export const timeOutline = '';
+export const trashOutline = '×';
+export const videocamOutline = '';
+export const warningOutline = '!';

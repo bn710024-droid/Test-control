@@ -1,0 +1,181 @@
+TROPICAURA — branchement de l'application mobile sur la tour de contrôle
+=========================================================================
+
+Ce dossier contient le correctif à appliquer au dépôt de l'application d'achat
+(bn710024-droid/app-tropicaura, commit 448f833) pour que tout ce qui est réglé
+dans la tour de contrôle s'y répercute automatiquement.
+
+Appliquer
+---------
+  1. Télécharger app-tropicaura.patch dans le dossier de l'application.
+  2. git apply app-tropicaura.patch
+  3. Vérifier, dans lib/config.ts, que CONTROL_TOWER est bien l'adresse de la
+     tour de contrôle (une seule ligne à changer si elle change).
+  4. npx tsc --noEmit, puis publier l'application (web et mobiles).
+
+Ce qui se répercute ensuite, sans rien faire (relecture à l'ouverture, toutes
+les 60 secondes et à chaque retour dans l'application)
+--------------------------------------------------------------------------
+  - Produits, photos, descriptions, saisons, visibilité.
+  - Prix des particuliers, offres professionnelles (avion, bateau), règles.
+  - Produit introuvable : quand une recherche ne donne rien dans tout le
+    catalogue, le client peut nous dire quel produit il recherche ; sa demande
+    arrive dans la tour de contrôle (Introuvables), avec le message réglé là-bas.
+  - Prix par pays : chaque client voit le prix de son pays, s'il en a un ;
+    sinon le prix global. Particuliers et professionnels, séparément.
+  - Rayons : nom, ordre, image ; filtres « Tout » et « De saison ».
+  - Rayons masqués aux grossistes et importateurs.
+  - Annonces du bandeau d'accueil : le modèle, ou l'image créée par l'équipe.
+  - Espace Publications (Favoris > Publications) : vidéos et publications photo.
+  - Vues, J'aime et commentaires des vidéos et des photos : envoyés à la tour de
+    contrôle, où l'équipe voit les statistiques de chaque publication.
+  - Moyens de paiement : Orange Money, Wave, virement, carte bancaire.
+  - Commandes des particuliers : envoyées à la tour de contrôle.
+  - Demandes des professionnels : envoyées dès qu'ils confirment leur intérêt.
+  - Statuts réglés par l'équipe : affichés au client, avec un message.
+    Pour un professionnel, l'étape en clair : Contacté, En discussion,
+    Contrat conclu, En préparation, En livraison, Livrée.
+
+Fichiers modifiés (17) et ajoutés (3)
+-------------------------------------
+  Modifiés : lib/config.ts, lib/catalog/schema.ts, lib/catalog/build.ts,
+  lib/data.ts, lib/locate.ts, lib/transmission.ts, lib/store.tsx, lib/videos.ts,
+  screens/HomeScreen.tsx, screens/ProductScreen.tsx, screens/CheckoutScreen.tsx,
+  screens/FavoritesScreen.tsx, screens/CreditsScreen.tsx,
+  components/HomeHero.tsx, components/DesktopHero.tsx, components/Reels.tsx,
+  App.tsx
+  Ajoutés : lib/posts.ts, components/PhotoPosts.tsx, components/MissingProduct.tsx
+
+Limites connues
+---------------
+  - Le paiement n'est pas encaissé par l'application (aucun prestataire) :
+    l'écran de paiement reste une démonstration ; l'équipe constate le
+    paiement et confirme la commande dans la tour de contrôle.
+  - Les messages s'affichent quand l'application est ouverte. Les notifications
+    « push », application fermée, demandent un service de notification.
+  - Vues, « J'aime » et commentaires : envoyés peu après chaque geste, et renvoyés à
+    la relecture suivante s'ils ne sont pas partis (pas de réseau). Les commentaires
+    ne sont pas montrés aux autres clients.
+  - Une demande annulée par le client dans l'application n'est pas transmise.
+  - Publications photo et annonces en image : vérifiées sur la version web de
+    l'application (expo export). Les versions iOS et Android n'ont pas pu être
+    lancées ici : à vérifier sur un téléphone avant publication.
+  - La mise en page « ordinateur » (DESKTOP_WEB, désactivée) ne dessine que le
+    modèle d'annonce, pas les images de l'équipe.
+
+ANNONCES DU BANDEAU D'ACCUEIL
+Le bandeau n'apparaît que s'il existe une annonce en cours dans la tour de contrôle
+(Publications > Annonces) : activée, commencée, pas encore terminée. Chaque annonce porte sa
+durée (startsAt / endsAt). Aucune annonce en cours : pas de bandeau, les rayons remontent sous
+la recherche. Les annonces écrites dans le code (CAMPAIGNS) ne sont plus affichées.
+
+ESPACE PUBLICATIONS (Favoris > Publications)
+Le deuxième bouton de l'onglet Favoris s'appelle « Publications » (il s'appelait « Découvrir »).
+On y trouve les vidéos et les publications photo de l'équipe, et rien d'autre : le client
+regarde, aime, commente. Rien n'y mène à un produit — ni bouton, ni photo cliquable.
+- Vidéos : VIDEOS_ENDPOINT = <tour>/api/publications?public=videos.
+- Photos : POSTS_ENDPOINT = <tour>/api/publications?public=photos :
+  [{ id, images: [{ url, width, height }], description, publishedAt, audience }].
+  Une à dix photos que le client fait défiler de côté, avec une description dessous. Le choix
+  « Vidéos / Photos » apparaît dès qu'il existe une publication photo.
+
+STATISTIQUES DES PUBLICATIONS (vidéos et photos)
+L'application envoie à ENGAGEMENT_ENDPOINT = <tour>/api/publications?public=reactions l'état du
+compte : { account: { id, name, type }, views: [id…], likes: [id…], comments: [{ id,
+publicationId, text, at }] }. C'est l'état complet, pas une suite d'événements : le renvoyer ne
+change rien. La tour de contrôle en tire, pour chaque vidéo et chaque publication photo, le
+nombre de vues, de J'aime et de commentaires, et le détail (qui, quoi, quand).
+- Une vue compte une fois par compte : vidéo lue 3 secondes, ou publication photo restée à
+  l'écran. Un J'aime retiré ou un commentaire supprimé disparaît des statistiques.
+- Le nom du compte accompagne ses gestes ; l'application le dit au client dans la fenêtre des
+  commentaires. Aucun e-mail ni numéro de téléphone n'est envoyé.
+
+ANNONCES (bandeau d'accueil) — à part des publications
+Une annonce ne s'affiche que dans le bandeau en haut de l'accueil, jamais dans l'espace
+Publications, et n'a pas de statistiques. C'est le seul endroit où un bouton ou une image mène à
+un produit. Dans la tour de contrôle (Publications > Annonces), une annonce est soit le modèle
+(produit, accroche, texte, bouton), soit « Votre image » : une image créée par l'équipe, qui
+occupe tout le bandeau. Le catalogue publie toutes les annonces en cours, dans l'ordre, sous la
+clé « banners » : [{ key, id (produit ou null), accent, body, startsAt, endsAt, imageUrl, link,
+buttonLabel }]. La clé « campaigns » ne contient que les annonces au modèle (pour une
+application sans ce correctif).
+- link = "none" : l'image seule, toucher ne fait rien. "button" : un bouton sur l'image ouvre
+  la fiche du produit. "tap" : toucher l'image ouvre la fiche du produit.
+
+PRODUITS INTROUVABLES
+Le catalogue publié porte « productRequest » : { enabled, title, body, placeholder, button,
+thanks } — le message réglé dans la tour de contrôle (Introuvables > Message au client).
+- Écran d'accueil : quand la recherche ne trouve rien dans TOUT le catalogue (et pas seulement
+  dans le rayon ouvert), components/MissingProduct.tsx affiche le titre, le message, un champ
+  déjà rempli avec la recherche, et le bouton. enabled = false, ou clé absente : rien ne s'affiche.
+- Envoi : POST TEAM_ENDPOINT (= <tour>/api/orders) avec { type: "produit_introuvable", product,
+  customer: { accountId, name, type, company, email, phone, whatsapp }, country, createdAt }.
+  Réponse 201 { ok: true } ; 200 { ok: true, duplicate: true } si ce compte a déjà demandé ce
+  produit. Après l'envoi, le client lit « thanks ».
+- La demande n'est pas mise en attente hors connexion : si l'envoi échoue, le client le lit et
+  peut réessayer. Le suivi de la demande (à l'étude, client prévenu) n'est pas renvoyé à
+  l'application : c'est l'équipe qui recontacte le client.
+
+PRIX PAR PAYS
+Les particuliers et les grossistes / importateurs ont chacun leurs prix (« retail » d'un côté,
+« wholesale » de l'autre). Pour chacun, le prix publié est le prix global ; une clé
+« countryPrices » liste les pays qui ont leur propre prix :
+- retail.countryPrices : [{ countries: ["SN", "ML"], price }]
+- wholesale[i].countryPrices : [{ countries: ["SN"], prices: { EXW, FOB } }] — un incoterm à
+  null garde le prix global de l'offre.
+Un pays ne figure que dans un seul groupe par offre. L'application applique le prix du pays du
+client (adresse de livraison, sinon pays de l'appareil) dans forCountry (lib/catalog/schema.ts) :
+accueil, fiche, panier et totaux utilisent ce prix. /api/catalog?pays=SN renvoie le catalogue
+déjà calculé pour un pays, sans la clé « countryPrices ».
+
+EMBALLAGES
+Chaque produit du catalogue publié porte une clé « packagings » : [{ id, label, qty, unit
+(kg | g | piece), price (ou null = à confirmer), step, min, max (ou null = aucun maximum),
+audience (tous | particuliers | pros) }].
+- qty + unit : CONTENU d'un emballage (un box de 4 kg, un sachet de 200 g), toujours renseigné.
+- price : prix de l'emballage ENTIER, jamais un prix au kilo (le prix au kilo ou à la pièce
+  est le prix global du produit, dans « retail »).
+- step, min, max : NOMBRE d'emballages qu'un client commande, en emballages entiers.
+- description : phrase de l'emballage (ou chaîne vide), 200 caractères au plus. À afficher sur
+  la fiche du produit, au-dessus de sa description, quand le client choisit cet emballage.
+- photo_url : photo de l'emballage (ou null). C'est celle de tous les pays, sauf ceux qui ont
+  la leur.
+- countryRules (présente seulement s'il y en a) : réglages de l'emballage par pays,
+  [{ countries: ["FR", "BE"], available, price, photo_url }]. photo_url = null : même photo
+  que l'emballage d'origine ; sinon, photo propre à ces pays. available = false : l'emballage n'est pas
+  proposé dans ces pays. price = null : prix d'origine ; sinon, prix propre à ces pays. Un pays
+  ne figure que dans un réglage. /api/catalog?pays=FR renvoie les emballages déjà calculés pour
+  ce pays (ceux qui y sont proposés, à leur prix), sans la clé « countryRules ».
+- À ne pas confondre avec « countries », qui dit où le PRODUIT s'affiche. Un emballage peut être
+  réglé pour un pays où le produit n'est pas affiché : le client de ce pays ne voit alors ni le
+  produit ni l'emballage, et le réglage sert le jour où le produit y est affiché.
+Ce correctif ne les lit pas : l'application n'affiche pas encore les emballages.
+
+ATTENTION
+Ce correctif a été préparé sur le commit 448f833 du dépôt public. Si l'application a changé
+depuis, il peut ne pas s'appliquer tel quel : il faut alors le refaire sur le code à jour.
+
+PAYS OÙ UN PRODUIT S'AFFICHE
+Chaque produit publié porte `countries` : { mode: "all" | "sn" | "except", except: ["FR", …] }.
+  all    : le monde entier
+  sn     : le Sénégal uniquement
+  except : le monde entier, sauf les pays listés (codes ISO à deux lettres)
+L'application ne montre que les produits de son pays : celui de l'adresse de livraison du
+client, sinon celui de l'appareil (fuseau horaire). Le catalogue filtré existe aussi tout prêt :
+  GET /api/catalog?pays=SN
+
+LIVRAISON À DOMICILE AU SÉNÉGAL : POSITION DU TÉLÉPHONE
+À la confirmation du panier, pour une adresse au Sénégal, l'application demande la
+localisation. Si le client l'autorise, la position part avec la commande :
+  "location": { "lat": 14.69278, "lng": -17.44672, "accuracy": 18 }
+Tant que la commande est en cours (`tracking: true` dans le suivi), l'application la rafraîchit
+à chaque relecture, sans redemander l'autorisation :
+  POST /api/orders  { "action": "position", "compte": "<compte>", "reference": "<numéro>",
+                      "lat": …, "lng": …, "accuracy": … }
+La position n'est relevée que lorsque l'application est ouverte. Un suivi en continu,
+application fermée, demande la localisation en arrière-plan (réglage natif et nouvelle
+publication de l'application) : ce n'est pas fait.
+
+Le suivi d'une commande indique aussi `delivery` : "domicile" (Sénégal, ou GP porte à porte)
+ou "aeroport" (GP jusqu'à l'aéroport d'arrivée).
+

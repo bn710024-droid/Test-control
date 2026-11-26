@@ -1,0 +1,2749 @@
+diff --git a/App.tsx b/App.tsx
+index 7ab4a9a..b2dd3d1 100644
+--- a/App.tsx
++++ b/App.tsx
+@@ -1,4 +1,4 @@
+-import React from 'react';
++import React, { useEffect, useRef } from 'react';
+ import { Platform, StyleSheet, View, useWindowDimensions } from 'react-native';
+ import { LinearGradient } from 'expo-linear-gradient';
+ import { StatusBar } from 'expo-status-bar';
+@@ -29,7 +29,7 @@ import { StoreProvider, TabId, useStore } from './lib/store';
+ import { DESKTOP_MIN, useFrame } from './lib/useFrame';
+ import { FlightProvider } from './lib/flight';
+ import { C, CLIP, MAX_WIDTH } from './lib/theme';
+-import { ToastProvider } from './lib/toast';
++import { ToastProvider, useToast } from './lib/toast';
+ import { AuthScreen } from './screens/AuthScreen';
+ import { CheckoutScreen } from './screens/CheckoutScreen';
+ import { CreditsScreen } from './screens/CreditsScreen';
+@@ -53,6 +53,19 @@ const theme: Theme = {
+   },
+ };
+ 
++/** Signale au client, par un message, chaque changement d'état réglé par l'équipe. */
++function TeamNotices() {
++  const { teamNotice } = useStore();
++  const toast = useToast();
++  const seen = useRef<string | null>(null);
++  useEffect(() => {
++    if (!teamNotice || seen.current === teamNotice.id) return;
++    seen.current = teamNotice.id;
++    toast(`${teamNotice.title} — ${teamNotice.message}`, { icon: 'notifications', tint: C.leaf });
++  }, [teamNotice, toast]);
++  return null;
++}
++
+ /** Sans compte ouvert, l'application s'arrête à l'inscription ; ensuite, elle s'ouvre en entier. */
+ function Root() {
+   const { hydrated, account, setTab } = useStore();
+@@ -158,6 +171,7 @@ export default function App() {
+           <View style={[styles.frame, desktop && styles.frameDesktop]}>
+             <StoreProvider>
+               <ToastProvider>
++                <TeamNotices />
+                 <FlightProvider>
+                   <Root />
+                 </FlightProvider>
+diff --git a/components/DesktopHero.tsx b/components/DesktopHero.tsx
+index 0ec9edf..279b099 100644
+--- a/components/DesktopHero.tsx
++++ b/components/DesktopHero.tsx
+@@ -18,6 +18,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { PrimaryButton } from './Buttons';
+ import { Glow } from './Glow';
+ import { buildSlides } from './HomeHero';
++import { useStore } from '../lib/store';
+ import { Pressable } from './Tap';
+ import { RATIO } from '../lib/ratios';
+ import { C, CLIP, F, R } from '../lib/theme';
+@@ -32,11 +33,20 @@ const AUTO_MS = 7000;
+  * mettent le défilement en pause.
+  */
+ export function DesktopHero({ width, onOpen }: { width: number; onOpen: (id: string) => void }) {
+-  const slides = useMemo(buildSlides, []);
++  const { campaigns, baseById } = useStore();
++  // Cette mise en page ne dessine que le modèle (produit + texte) : les annonces faites d'une
++  // image de l'équipe n'y figurent pas.
++  const slides = useMemo(
++    () =>
++      buildSlides(campaigns, baseById).flatMap((s) =>
++        s.back && !s.image ? [{ ...s, back: s.back }] : [],
++      ),
++    [campaigns, baseById],
++  );
+   const reduced = useReducedMotion();
+   const [index, setIndex] = useState(0);
+   const paused = useRef(false);
+-  const slide = slides[index % slides.length];
++  const slide = slides.length > 0 ? slides[index % slides.length] : undefined;
+ 
+   useEffect(() => {
+     if (reduced || slides.length < 2) return;
+@@ -85,6 +95,9 @@ export function DesktopHero({ width, onOpen }: { width: number; onOpen: (id: str
+     setIndex((next + slides.length) % slides.length);
+   };
+ 
++  // Aucune annonce en cours : le bandeau n'existe pas.
++  if (!slide) return null;
++
+   return (
+     <View
+       style={[styles.card, { width, height: HEIGHT }]}
+@@ -109,7 +122,7 @@ export function DesktopHero({ width, onOpen }: { width: number; onOpen: (id: str
+       {/* Visuel, à droite. */}
+       <View style={[styles.art, { width: artW }]}>
+         <Animated.View
+-          key={`glow-${slide.id}`}
++          key={`glow-${slide.key}`}
+           entering={FadeIn.duration(600)}
+           exiting={FadeOut.duration(300)}
+           style={StyleSheet.absoluteFill}
+@@ -134,7 +147,7 @@ export function DesktopHero({ width, onOpen }: { width: number; onOpen: (id: str
+           Votre table
+         </Text>
+         <Animated.View
+-          key={`img-${slide.id}`}
++          key={`img-${slide.key}`}
+           entering={reduced ? undefined : FadeInRight.duration(560)}
+           exiting={reduced ? undefined : FadeOut.duration(220)}
+           style={{
+@@ -159,7 +172,7 @@ export function DesktopHero({ width, onOpen }: { width: number; onOpen: (id: str
+ 
+       {/* Texte, à gauche. */}
+       <Animated.View
+-        key={`copy-${slide.id}`}
++        key={`copy-${slide.key}`}
+         entering={reduced ? undefined : FadeInDown.duration(460)}
+         exiting={reduced ? undefined : FadeOut.duration(160)}
+         style={[styles.copy, { right: artW }]}
+@@ -192,7 +205,7 @@ export function DesktopHero({ width, onOpen }: { width: number; onOpen: (id: str
+           </Pressable>
+           {slides.map((s, i) => (
+             <Pressable
+-              key={s.id}
++              key={s.key}
+               onPress={() => go(i)}
+               hitSlop={8}
+               feedback="none"
+diff --git a/components/HomeHero.tsx b/components/HomeHero.tsx
+index 1c0545f..39db6d7 100644
+--- a/components/HomeHero.tsx
++++ b/components/HomeHero.tsx
+@@ -18,7 +18,9 @@ import { LinearGradient } from 'expo-linear-gradient';
+ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { Glow } from './Glow';
+ import { PressableScale } from './PressableScale';
+-import { CAMPAIGNS, PRODUCT_BY_ID, Product } from '../lib/data';
++import { PRODUCT_BY_ID, Product } from '../lib/data';
++import type { Campaign } from '../lib/catalog/schema';
++import { useStore } from '../lib/store';
+ import { fromMonth, isInSeason, nextSeasonStart } from '../lib/format';
+ import { RATIO } from '../lib/ratios';
+ import { C, F, R, shadow } from '../lib/theme';
+@@ -30,28 +32,66 @@ const LEAF_BLUR = require('../assets/decor/leaf-blur.webp');
+ const HEIGHT = 256;
+ const AUTO_MS = 6000;
+ 
+-type Slide = {
+-  /** Produit de la campagne : le bandeau ouvre sa fiche. */
++export type Slide = {
++  /** Repère unique de la diapositive. */
++  key: string;
++  /** Produit de la campagne : le bandeau ouvre sa fiche. Vide : image de l'équipe, sans lien. */
+   id: string;
++  /** Image créée par l'équipe : elle occupe tout le bandeau, à la place du modèle. */
++  image?: string;
++  /** Ce que fait un toucher : rien, un bouton vers le produit, ou l'image entière. */
++  link: 'none' | 'button' | 'tap';
+   kicker: string;
+   title: string;
+   accent: string;
+   body: string;
+   cta: string;
+-  back: Product;
++  /** Produit de l'annonce. Absent : image seule, sans lien. */
++  back: Product | null;
+ };
+ 
+ /** Une diapositive par campagne : « à venir » avec son mois d'ouverture, ou « en cours ». */
+-export function buildSlides(): Slide[] {
+-  return CAMPAIGNS.filter((c) => PRODUCT_BY_ID[c.id]).map((c) => {
+-    const product = PRODUCT_BY_ID[c.id];
++export function buildSlides(
++  campaigns: Campaign[] = [],
++  products: Record<string, Product> = PRODUCT_BY_ID,
++  now: number = Date.now(),
++): Slide[] {
++  // Seules les annonces en cours, créées par l'équipe dans la tour de contrôle, s'affichent :
++  // commencées, pas terminées, et sur un produit visible. Aucune → liste vide → pas de bandeau.
++  const list = campaigns.filter(
++    (c) =>
++      (products[c.id] || (c.imageUrl && c.link === 'none')) &&
++      (!c.endsAt || Date.parse(c.endsAt) > now) &&
++      (!c.startsAt || Date.parse(c.startsAt) <= now),
++  );
++  return list.map((c, i): Slide => {
++    const key = c.key ?? `${c.id || 'image'}-${i}`;
++    // Image de l'équipe : pas de mise en page, l'image fait l'annonce.
++    if (c.imageUrl) {
++      const link = c.link ?? 'button';
++      return {
++        key,
++        id: link === 'none' ? '' : c.id,
++        image: c.imageUrl,
++        link,
++        kicker: '',
++        title: link === 'none' ? '' : (products[c.id]?.name ?? ''),
++        accent: '',
++        body: c.body,
++        cta: c.buttonLabel || 'Voir le produit',
++        back: link === 'none' ? null : (products[c.id] ?? null),
++      };
++    }
++    const product = products[c.id];
+     const article = /^[aeiouyéèêh]/i.test(product.name)
+       ? 'l’'
+       : product.name.endsWith('e')
+         ? 'la '
+         : 'le ';
+     return {
++      key,
+       id: c.id,
++      link: 'button',
+       kicker: isInSeason(product)
+         ? 'Campagne en cours'
+         : `Campagne à venir · ${fromMonth(nextSeasonStart(product))}`,
+@@ -82,7 +122,7 @@ function SlideView({
+   const compact = width < 310;
+ 
+   // Arrière-plan : grand, cadré serré, il déborde du bord droit de la carte.
+-  const backRatio = RATIO[slide.back.id] ?? 1;
++  const backRatio = slide.back ? (RATIO[slide.back.id] ?? 1) : 1;
+   const backW = Math.min(HEIGHT * 0.8 * backRatio, width * 0.66);
+   const backH = backW / backRatio;
+ 
+@@ -102,6 +142,72 @@ function SlideView({
+     ),
+   }));
+ 
++  // Image de l'équipe : elle occupe tout le bandeau. Texte et bouton sont facultatifs ; sans
++  // lien, toucher l'image ne fait rien.
++  if (slide.image) {
++    const shaded = !!slide.body || slide.link === 'button';
++    const content = (
++      <>
++        <Image
++          source={{ uri: slide.image }}
++          style={StyleSheet.absoluteFill}
++          contentFit="cover"
++          transition={200}
++          priority={index === 0 ? 'high' : 'normal'}
++          accessible={slide.link !== 'tap' && !!slide.body}
++          accessibilityLabel={slide.body || undefined}
++        />
++        {shaded && (
++          <LinearGradient
++            colors={['rgba(0,0,0,0)', 'rgba(0,0,0,0.5)', 'rgba(0,0,0,0.86)']}
++            locations={[0, 0.5, 1]}
++            style={[styles.imageShade, { pointerEvents: 'none' }]}
++          />
++        )}
++        {shaded && (
++          <Animated.View style={[styles.imageCopy, { pointerEvents: 'box-none' }, textStyle]}>
++            {!!slide.body && (
++              <Text style={styles.imageBody} numberOfLines={2}>
++                {slide.body}
++              </Text>
++            )}
++            {slide.link === 'button' && (
++              <PressableScale
++                onPress={onPress}
++                accessibilityRole="button"
++                accessibilityLabel={`${slide.cta} : ${slide.title}`}
++                style={[styles.cta, styles.imageCta]}
++              >
++                <Text style={styles.ctaText} numberOfLines={1}>
++                  {slide.cta}
++                </Text>
++                <Ionicons name="chevron-forward" size={15} color={C.leaf} />
++              </PressableScale>
++            )}
++          </Animated.View>
++        )}
++      </>
++    );
++    const frame = { width, height: HEIGHT, overflow: 'hidden' } as const;
++    // Seul le mode « toucher l'image » rend toute l'image active ; avec un bouton, lui seul l'est.
++    return slide.link === 'tap' ? (
++      <Pressable
++        feedback="none"
++        onPress={onPress}
++        accessibilityRole="button"
++        accessibilityLabel={`${slide.body || 'Annonce'} : voir ${slide.title}`}
++        style={frame}
++      >
++        {content}
++      </Pressable>
++    ) : (
++      <View style={frame}>{content}</View>
++    );
++  }
++  // Modèle : il porte toujours sur un produit.
++  const back = slide.back;
++  if (!back) return null;
++
+   return (
+     <Pressable
+       feedback="none"
+@@ -111,7 +217,7 @@ function SlideView({
+     >
+       <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+         <Glow
+-          color={slide.back.tint}
++          color={back.tint}
+           width={HEIGHT * 1.7}
+           opacity={0.46}
+           style={{ right: -HEIGHT * 0.62, top: -HEIGHT * 0.36 }}
+@@ -135,7 +241,7 @@ function SlideView({
+           ]}
+         >
+           <Image
+-            source={slide.back.image}
++            source={back.image}
+             style={StyleSheet.absoluteFill}
+             contentFit="contain"
+             priority={index === 0 ? 'high' : 'normal'}
+@@ -233,7 +339,8 @@ function Dot({
+ 
+ /** Bandeau d'accueil : annonce les campagnes de produits, à venir ou en cours. */
+ export function HomeHero({ width, onOpen }: { width: number; onOpen: (id: string) => void }) {
+-  const slides = useMemo(buildSlides, []);
++  const { campaigns, baseById } = useStore();
++  const slides = useMemo(() => buildSlides(campaigns, baseById), [campaigns, baseById]);
+   const ref = useRef<ScrollView>(null);
+   const scrollX = useSharedValue(0);
+   const float = useSharedValue(0.5);
+@@ -257,6 +364,9 @@ export function HomeHero({ width, onOpen }: { width: number; onOpen: (id: string
+     return () => clearInterval(id);
+   }, [reduced, float, slides.length, width]);
+ 
++  // Aucune annonce en cours : le bandeau n'existe pas.
++  if (slides.length === 0) return null;
++
+   return (
+     <View style={[styles.card, shadow(18, 40, 0.45), { width, height: HEIGHT }]}>
+       <View style={styles.clip}>
+@@ -285,13 +395,14 @@ export function HomeHero({ width, onOpen }: { width: number; onOpen: (id: string
+         >
+           {slides.map((s, i) => (
+             <SlideView
+-              key={s.id}
++              key={s.key}
+               slide={s}
+               index={i}
+               width={width}
+               scrollX={scrollX}
+               float={float}
+               onPress={() => {
++                if (!s.id) return;
+                 tick();
+                 touched.current = true;
+                 onOpen(s.id);
+@@ -302,7 +413,7 @@ export function HomeHero({ width, onOpen }: { width: number; onOpen: (id: string
+         <View style={styles.dots}>
+           {slides.map((s, i) => (
+             <Dot
+-              key={s.id}
++              key={s.key}
+               index={i}
+               width={width}
+               scrollX={scrollX}
+@@ -385,7 +496,11 @@ const styles = StyleSheet.create({
+     borderColor: 'rgba(168,213,79,0.6)',
+     backgroundColor: 'rgba(14,18,11,0.82)',
+   },
+-  ctaText: { color: C.text, fontFamily: F.bold, fontSize: 13.5 },
++  ctaText: { color: C.text, fontFamily: F.bold, fontSize: 13.5, flexShrink: 1 },
++  imageShade: { position: 'absolute', left: 0, right: 0, bottom: 0, height: '70%' },
++  imageCopy: { position: 'absolute', left: 20, right: 20, bottom: 26, alignItems: 'flex-start' },
++  imageBody: { color: C.text, fontFamily: F.semi, fontSize: 14.5, lineHeight: 20, maxWidth: '92%' },
++  imageCta: { marginTop: 10, maxWidth: '100%', backgroundColor: 'rgba(14,18,11,0.72)' },
+   dots: {
+     position: 'absolute',
+     left: 0,
+diff --git a/components/MissingProduct.tsx b/components/MissingProduct.tsx
+new file mode 100644
+index 0000000..5b74d0e
+--- /dev/null
++++ b/components/MissingProduct.tsx
+@@ -0,0 +1,135 @@
++import React, { useEffect, useState } from 'react';
++import { StyleSheet, Text, View } from 'react-native';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { PrimaryButton } from './Buttons';
++import { TextInput } from './Input';
++import { ErrorText } from './Motion';
++import { KeepsOwnSwipes } from './PageSwipe';
++import { success } from '../lib/haptics';
++import { useStore } from '../lib/store';
++import { C, F, R } from '../lib/theme';
++
++/**
++ * Produit introuvable : la recherche ne donne rien dans tout le catalogue. On demande au client
++ * quel produit il recherche — sa recherche est déjà écrite — et sa demande part vers l'équipe,
++ * qui reviendra vers lui. Les textes viennent de la tour de contrôle ; si elle ne les fournit
++ * pas, ou si l'équipe a désactivé ce message, rien ne s'affiche.
++ */
++export function MissingProduct({ query }: { query: string }) {
++  const { productRequest, requestProduct } = useStore();
++  const [text, setText] = useState(query);
++  const [state, setState] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
++
++  // La recherche fait foi : à chaque nouvelle recherche, le champ la reprend et l'on repart de
++  // zéro. Le client peut préciser sa demande dans le champ tant que la recherche ne change pas.
++  useEffect(() => {
++    setText(query);
++    setState('idle');
++  }, [query]);
++
++  if (!productRequest) return null;
++  const product = text.trim().replace(/\s+/g, ' ');
++  const ready = product.length >= 2;
++
++  const send = async () => {
++    if (!ready || state === 'sending') return;
++    setState('sending');
++    const result = await requestProduct(product);
++    if (result === 'sent') success();
++    setState(result === 'sent' ? 'sent' : 'failed');
++  };
++
++  if (state === 'sent') {
++    return (
++      <View style={[styles.card, styles.done]} accessibilityLiveRegion="polite">
++        <View style={styles.check}>
++          <Ionicons name="checkmark" size={20} color={C.onLeaf} />
++        </View>
++        <Text style={styles.thanks}>{productRequest.thanks}</Text>
++      </View>
++    );
++  }
++
++  return (
++    <View style={styles.card}>
++      <Text style={styles.title} accessibilityRole="header">
++        {productRequest.title}
++      </Text>
++      <Text style={styles.body}>{productRequest.body}</Text>
++      <KeepsOwnSwipes>
++        <TextInput
++          value={text}
++          onChangeText={(v) => {
++            setText(v);
++            if (state === 'failed') setState('idle');
++          }}
++          placeholder={productRequest.placeholder}
++          placeholderTextColor={C.textFaint}
++          maxLength={80}
++          returnKeyType="send"
++          onSubmitEditing={send}
++          accessibilityLabel={productRequest.placeholder || productRequest.title}
++          style={styles.input}
++        />
++      </KeepsOwnSwipes>
++      {state === 'failed' && (
++        <ErrorText style={styles.error}>
++          Votre demande n’est pas partie. Vérifiez votre connexion, puis réessayez.
++        </ErrorText>
++      )}
++      <PrimaryButton
++        label={productRequest.button}
++        onPress={send}
++        disabled={!ready}
++        loading={state === 'sending'}
++        loadingLabel="Envoi…"
++        style={styles.button}
++      />
++    </View>
++  );
++}
++
++const styles = StyleSheet.create({
++  card: {
++    marginTop: 26,
++    marginHorizontal: 20,
++    padding: 18,
++    borderRadius: R.lg,
++    backgroundColor: C.surface,
++    borderWidth: 1,
++    borderColor: C.line,
++  },
++  done: { alignItems: 'center', borderColor: 'rgba(168,213,79,0.4)', backgroundColor: C.leafWash },
++  check: {
++    width: 38,
++    height: 38,
++    borderRadius: 19,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: C.leaf,
++  },
++  thanks: {
++    marginTop: 12,
++    color: C.text,
++    fontFamily: F.semi,
++    fontSize: 15,
++    lineHeight: 22,
++    textAlign: 'center',
++  },
++  title: { color: C.text, fontFamily: F.display, fontSize: 20, lineHeight: 26 },
++  body: { marginTop: 8, color: C.textDim, fontFamily: F.medium, fontSize: 14.5, lineHeight: 21 },
++  input: {
++    marginTop: 14,
++    height: 50,
++    paddingHorizontal: 16,
++    borderRadius: R.md,
++    borderWidth: 1,
++    borderColor: C.lineStrong,
++    backgroundColor: 'rgba(0,0,0,0.25)',
++    color: C.text,
++    fontFamily: F.semi,
++    fontSize: 16,
++  },
++  error: { marginTop: 10 },
++  button: { marginTop: 14 },
++});
+diff --git a/components/PhotoPosts.tsx b/components/PhotoPosts.tsx
+new file mode 100644
+index 0000000..f5647fc
+--- /dev/null
++++ b/components/PhotoPosts.tsx
+@@ -0,0 +1,313 @@
++import React, { useCallback, useRef, useState } from 'react';
++import { FlatList, ScrollView, StyleSheet, Text, View, ViewToken } from 'react-native';
++import { Image } from 'expo-image';
++import Ionicons from '@expo/vector-icons/Ionicons';
++import { KeepsOwnSwipes, PAGE_SCROLL } from './PageSwipe';
++import { Comments } from './Reels';
++import { Sheet } from './Sheet';
++import { TAB_BAR_SPACE } from './TabBar';
++import { Pressable } from './Tap';
++import { formatDay } from '../lib/format';
++import { tick } from '../lib/haptics';
++import type { PhotoPost } from '../lib/posts';
++import { useStore } from '../lib/store';
++import { C, F, PAD, R } from '../lib/theme';
++import { useFrame } from '../lib/useFrame';
++
++const LEAF = require('../assets/decor/leaf.webp');
++
++/**
++ * Une publication photo de l'équipe : ses photos défilent de côté, la description reste dessous.
++ * On peut l'aimer et la commenter. Rien n'y mène à un produit : les liens vers les produits sont
++ * réservés aux annonces du bandeau d'accueil.
++ */
++function Post({
++  post,
++  width,
++  liked,
++  commentCount,
++  onLike,
++  onComments,
++}: {
++  post: PhotoPost;
++  width: number;
++  liked: boolean;
++  commentCount: number;
++  onLike: (id: string) => void;
++  onComments: (id: string) => void;
++}) {
++  const [index, setIndex] = useState(0);
++  const count = post.images.length;
++  const first = post.images[0];
++  // La première photo donne son format à toute la publication, entre 4:5 et 1,91:1.
++  const ratio =
++    first.width > 0 && first.height > 0
++      ? Math.max(0.8, Math.min(1.91, first.width / first.height))
++      : 1;
++  const height = Math.round(width / ratio);
++
++  return (
++    <View style={styles.post}>
++      <View style={styles.head}>
++        <View style={styles.avatar}>
++          <Image source={LEAF} style={styles.avatarLeaf} contentFit="contain" accessible={false} />
++        </View>
++        <View style={{ flex: 1 }}>
++          <Text style={styles.author} numberOfLines={1}>
++            Tropicaura
++          </Text>
++          {!!post.publishedAt && <Text style={styles.date}>{formatDay(post.publishedAt)}</Text>}
++        </View>
++      </View>
++
++      {/* Les photos gardent leur glissement horizontal : il ne change pas de page. */}
++      <KeepsOwnSwipes style={{ width, height, backgroundColor: '#000000' }}>
++        <ScrollView
++          horizontal
++          pagingEnabled
++          showsHorizontalScrollIndicator={false}
++          scrollEventThrottle={16}
++          decelerationRate="fast"
++          onScroll={(e) => setIndex(Math.round(e.nativeEvent.contentOffset.x / width))}
++          accessibilityLabel={
++            count > 1 ? `${count} photos. Glissez de côté pour les voir.` : undefined
++          }
++        >
++          {post.images.map((img, i) => (
++            <Image
++              key={img.url}
++              source={{ uri: img.url }}
++              style={{ width, height }}
++              contentFit="cover"
++              transition={200}
++              priority={i === 0 ? 'high' : 'normal'}
++              accessibilityLabel={`Photo ${i + 1} sur ${count}`}
++            />
++          ))}
++        </ScrollView>
++        {count > 1 && (
++          <View style={styles.counter}>
++            <Text style={styles.counterText}>
++              {Math.min(index, count - 1) + 1}/{count}
++            </Text>
++          </View>
++        )}
++      </KeepsOwnSwipes>
++
++      <View style={styles.bar}>
++        <Pressable
++          onPress={() => {
++            tick();
++            onLike(post.id);
++          }}
++          scaleTo={0.9}
++          accessibilityRole="button"
++          accessibilityLabel={liked ? 'Retirer mon J’aime' : 'J’aime cette publication'}
++          accessibilityState={{ selected: liked }}
++          aria-pressed={liked}
++          style={[styles.action, liked && styles.actionOn]}
++        >
++          <Ionicons
++            name={liked ? 'heart' : 'heart-outline'}
++            size={20}
++            color={liked ? C.heart : C.text}
++          />
++          <Text style={styles.actionText}>J’aime</Text>
++        </Pressable>
++        <Pressable
++          onPress={() => onComments(post.id)}
++          scaleTo={0.9}
++          accessibilityRole="button"
++          accessibilityLabel={
++            commentCount > 0
++              ? `Commentaires, ${commentCount} de vous`
++              : 'Commenter cette publication'
++          }
++          style={styles.action}
++        >
++          <Ionicons name="chatbubble-ellipses-outline" size={19} color={C.text} />
++          <Text style={styles.actionText}>
++            {commentCount > 0 ? String(commentCount) : 'Commenter'}
++          </Text>
++        </Pressable>
++        {count > 1 && (
++          <View style={styles.dots}>
++            {post.images.map((img, i) => (
++              <View key={img.url} style={[styles.dot, i === index && styles.dotOn]} />
++            ))}
++          </View>
++        )}
++      </View>
++
++      {!!post.description && (
++        <Text style={styles.description}>
++          <Text style={styles.descriptionAuthor}>Tropicaura </Text>
++          {post.description}
++        </Text>
++      )}
++    </View>
++  );
++}
++
++// Une publication compte comme vue quand elle est restée à l'écran, pour l'essentiel, un instant.
++const VIEWABILITY = { itemVisiblePercentThreshold: 60, minimumViewTime: 600 };
++
++/**
++ * Publications › Photos : les publications photo de l'équipe, de la plus récente à la plus
++ * ancienne. Vues, J'aime et commentaires sont transmis à l'équipe, comme pour les vidéos.
++ */
++export function PhotoPosts({ top }: { top: number }) {
++  const { account, posts, likes, comments, markWatched, toggleLike, addComment, removeComment } =
++    useStore();
++  const { width, bottom } = useFrame();
++  const [commentsFor, setCommentsFor] = useState<string | null>(null);
++  const current = commentsFor ? posts.find((p) => p.id === commentsFor) : undefined;
++
++  const seen = useRef(markWatched);
++  seen.current = markWatched;
++  const onViewable = useCallback(({ viewableItems }: { viewableItems: ViewToken[] }) => {
++    for (const v of viewableItems) {
++      if (v.isViewable && typeof v.key === 'string') seen.current(v.key);
++    }
++  }, []);
++
++  return (
++    <>
++      <FlatList
++        data={posts}
++        style={[PAGE_SCROLL, { backgroundColor: C.bg }]}
++        keyExtractor={(p) => p.id}
++        showsVerticalScrollIndicator={false}
++        contentContainerStyle={{
++          paddingTop: top,
++          paddingBottom: TAB_BAR_SPACE + bottom + 16,
++        }}
++        viewabilityConfig={VIEWABILITY}
++        onViewableItemsChanged={onViewable}
++        accessibilityLabel="Photos de notre équipe"
++        renderItem={({ item }) => (
++          <Post
++            post={item}
++            width={width}
++            liked={likes.includes(item.id)}
++            commentCount={(comments[item.id] ?? []).length}
++            onLike={toggleLike}
++            onComments={setCommentsFor}
++          />
++        )}
++      />
++      <Sheet visible={!!current} onClose={() => setCommentsFor(null)} title="Commentaires">
++        {current && (
++          <Comments
++            empty="Aucun commentaire sur cette publication. Écrivez le premier."
++            list={comments[current.id] ?? []}
++            name={account?.name ?? ''}
++            onAdd={(text) => addComment(current.id, text)}
++            onRemove={(id) => removeComment(current.id, id)}
++          />
++        )}
++      </Sheet>
++    </>
++  );
++}
++
++const styles = StyleSheet.create({
++  post: { marginBottom: 26 },
++  head: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 10,
++    paddingHorizontal: PAD,
++    paddingBottom: 10,
++  },
++  avatar: {
++    width: 36,
++    height: 36,
++    borderRadius: 18,
++    alignItems: 'center',
++    justifyContent: 'center',
++    backgroundColor: C.surface,
++    borderWidth: 1,
++    borderColor: C.lineStrong,
++  },
++  avatarLeaf: { width: 17, height: 17 },
++  author: {
++    color: C.text,
++    fontFamily: F.heavy,
++    fontSize: 14.5,
++    lineHeight: 19,
++  },
++  date: {
++    color: C.textFaint,
++    fontFamily: F.medium,
++    fontSize: 12,
++    lineHeight: 16,
++  },
++  counter: {
++    position: 'absolute',
++    top: 12,
++    right: 12,
++    paddingHorizontal: 10,
++    paddingVertical: 4,
++    borderRadius: R.pill,
++    backgroundColor: 'rgba(0,0,0,0.62)',
++    pointerEvents: 'none',
++  },
++  counterText: {
++    color: C.text,
++    fontFamily: F.bold,
++    fontSize: 12.5,
++    fontVariant: ['tabular-nums'],
++  },
++  bar: {
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 8,
++    paddingHorizontal: PAD - 4,
++    paddingTop: 10,
++  },
++  action: {
++    height: 44,
++    flexDirection: 'row',
++    alignItems: 'center',
++    gap: 7,
++    paddingHorizontal: 14,
++    borderRadius: R.pill,
++    backgroundColor: C.surface,
++    borderWidth: 1,
++    borderColor: C.line,
++  },
++  actionOn: {
++    borderColor: 'rgba(255,93,98,0.5)',
++    backgroundColor: 'rgba(255,93,98,0.12)',
++  },
++  actionText: {
++    color: C.text,
++    fontFamily: F.bold,
++    fontSize: 13.5,
++    fontVariant: ['tabular-nums'],
++  },
++  dots: {
++    flex: 1,
++    flexDirection: 'row',
++    justifyContent: 'flex-end',
++    gap: 5,
++    paddingRight: 4,
++  },
++  dot: {
++    width: 5,
++    height: 5,
++    borderRadius: 3,
++    backgroundColor: 'rgba(245,242,233,0.3)',
++  },
++  dotOn: { width: 16, backgroundColor: C.leaf },
++  description: {
++    paddingHorizontal: PAD,
++    paddingTop: 12,
++    color: C.textDim,
++    fontFamily: F.medium,
++    fontSize: 14.5,
++    lineHeight: 22,
++  },
++  descriptionAuthor: { color: C.text, fontFamily: F.heavy },
++});
+diff --git a/components/Reels.tsx b/components/Reels.tsx
+index 0722293..f22c82c 100644
+--- a/components/Reels.tsx
++++ b/components/Reels.tsx
+@@ -178,7 +178,7 @@ type ItemProps = {
+   height: number;
+   top: number;
+   bottomSpace: number;
+-  /** Cette vidéo est à l'écran et l'espace Découvrir est ouvert : elle peut jouer. */
++  /** Cette vidéo est à l'écran et l'espace Publications est ouvert : elle peut jouer. */
+   playing: boolean;
+   muted: boolean;
+   watched: boolean;
+@@ -474,14 +474,16 @@ const ReelItem = memo(function ReelItem({
+   );
+ });
+ 
+-function Comments({
+-  video,
++/** Commentaires d'un compte sur une publication de l'équipe : une vidéo ou des photos. */
++export function Comments({
++  empty,
+   list,
+   name,
+   onAdd,
+   onRemove,
+ }: {
+-  video: TeamVideo;
++  /** Phrase affichée tant qu'il n'y a aucun commentaire. */
++  empty: string;
+   list: VideoComment[];
+   name: string;
+   onAdd: (text: string) => void;
+@@ -498,8 +500,8 @@ function Comments({
+   return (
+     <View>
+       <Text style={styles.sheetNote}>
+-        Démonstration : vos commentaires restent sur cet appareil. Ils ne sont ni publiés, ni
+-        modérés, ni visibles par d’autres personnes pour l’instant.
++        Vos commentaires sont transmis à notre équipe, avec le nom de votre compte. Ils ne sont pas
++        visibles par les autres clients.
+       </Text>
+       <ScrollView
+         style={styles.comments}
+@@ -507,9 +509,7 @@ function Comments({
+         showsVerticalScrollIndicator={false}
+       >
+         {list.length === 0 ? (
+-          <Text style={styles.noComment}>
+-            Aucun commentaire sur « {video.title} ». Écrivez le premier.
+-          </Text>
++          <Text style={styles.noComment}>{empty}</Text>
+         ) : (
+           list.map((c) => (
+             <Animated.View
+@@ -568,7 +568,7 @@ function Comments({
+ }
+ 
+ /**
+- * Espace « Découvrir » : les vidéos publiées par l'équipe, plein écran, l'une sous l'autre.
++ * Espace « Publications » : les vidéos publiées par l'équipe, plein écran, l'une sous l'autre.
+  * Ce n'est pas un fil sans fin : la liste est celle de l'équipe, les nouvelles d'abord, puis
+  * celles déjà vues, et elle se termine.
+  */
+@@ -722,7 +722,7 @@ export function Reels({ active, top }: { active: boolean; top: number }) {
+       <Sheet visible={!!current} onClose={() => setCommentsFor(null)} title="Commentaires">
+         {current && (
+           <Comments
+-            video={current}
++            empty={`Aucun commentaire sur « ${current.title} ». Écrivez le premier.`}
+             list={comments[current.id] ?? []}
+             name={account?.name ?? ''}
+             onAdd={(text) => addComment(current.id, text)}
+@@ -744,8 +744,8 @@ export function Reels({ active, top }: { active: boolean; top: number }) {
+           l’onglet Favoris baisse alors d’une unité.
+         </Text>
+         <Text style={styles.infoLine}>
+-          • Vues, J’aime et commentaires sont enregistrés sur cet appareil, pour ce compte. Ils ne
+-          sont pas transmis à l’équipe, et aucun commentaire n’est publié ni modéré pour l’instant.
++          • Vues, J’aime et commentaires sont transmis à notre équipe, avec le nom de votre compte :
++          ils lui servent de statistiques. Aucun commentaire n’est visible par les autres clients.
+         </Text>
+       </Sheet>
+     </View>
+diff --git a/lib/catalog/build.ts b/lib/catalog/build.ts
+index 482c174..863a348 100644
+--- a/lib/catalog/build.ts
++++ b/lib/catalog/build.ts
+@@ -1,4 +1,4 @@
+-import type { CategoryId, Photo, Product } from '../data';
++import type { Photo, Product } from '../data';
+ import { PHOTO_ASSETS } from './embedded';
+ import { resolveOffer } from './rules';
+ import type { CatalogDocument, CatalogProduct, Incoterm, Mode, WholesaleOffer } from './schema';
+@@ -8,15 +8,6 @@ import type { CatalogDocument, CatalogProduct, Incoterm, Mode, WholesaleOffer }
+  * deux formats : quand le catalogue change, les écrans suivent sans être modifiés.
+  */
+ 
+-const CATEGORIES: CategoryId[] = [
+-  'fruits',
+-  'rouges',
+-  'agrumes',
+-  'exotiques',
+-  'legumes',
+-  'aromates',
+-];
+-
+ const FALLBACK_PHOTO: Photo = require('../../assets/decor/leaf.webp');
+ 
+ function photoOf(p: CatalogProduct): Photo {
+@@ -38,7 +29,8 @@ function base(p: CatalogProduct): Product {
+     id: p.id,
+     name: p.name,
+     variety: p.variety,
+-    category: CATEGORIES.includes(p.category as CategoryId) ? (p.category as CategoryId) : 'fruits',
++    // Le rayon vient tel quel du catalogue : un nouveau rayon créé par l'équipe est accepté.
++    category: p.category || 'fruits',
+     origin: p.origin,
+     price: retail?.price ?? 0,
+     unit: retail?.unit ?? 'kg',
+diff --git a/lib/catalog/schema.ts b/lib/catalog/schema.ts
+index e5d130c..5ab8e79 100644
+--- a/lib/catalog/schema.ts
++++ b/lib/catalog/schema.ts
+@@ -35,6 +35,8 @@ export type RetailOffer = {
+   step: number;
+   min?: number;
+   max?: number;
++  /** Pays qui ont leur propre prix. Partout ailleurs, `price` (le prix global) s'applique. */
++  countryPrices?: { countries: string[]; price: number }[];
+ };
+ 
+ /** Offre aux professionnels (B2B). Un produit peut en avoir zéro, une ou plusieurs. */
+@@ -56,6 +58,11 @@ export type WholesaleOffer = {
+    * s'applique. `null` : poids non défini (seul le nombre de conteneurs est alors affiché).
+    */
+   containerKg?: number | null;
++  /**
++   * Pays qui ont leurs propres prix pour cette offre. Partout ailleurs, `prices` s'applique ; un
++   * incoterm laissé vide pour un pays garde le prix global.
++   */
++  countryPrices?: { countries: string[]; prices: Record<Incoterm, number | null> }[];
+ };
+ 
+ /** Règles de quantité des professionnels, modifiables sans refaire les écrans. */
+@@ -75,6 +82,8 @@ export type QuantityRules = {
+   };
+ };
+ 
++export type ProductCountries = { mode: 'all' | 'sn' | 'except'; except: string[] };
++
+ export type CatalogProduct = {
+   id: string;
+   name: string;
+@@ -95,6 +104,50 @@ export type CatalogProduct = {
+   reviews: number;
+   retail: RetailOffer | null;
+   wholesale: WholesaleOffer[];
++  /** Pays où le produit s'affiche : partout, au Sénégal uniquement, ou partout sauf certains pays. */
++  countries?: ProductCountries;
++};
++
++/** Rayon du catalogue, réglé dans la tour de contrôle : nom, ordre, illustration ronde. */
++export type Shelf = {
++  id: string;
++  label: string;
++  /** Adresse d'une image publiée, ou `null`. */
++  photoUrl: string | null;
++  /** À défaut d'image : produit dont la photo illustre le rayon, ou `null`. */
++  photoProduct: string | null;
++};
++/** Filtre de l'accueil (« Tout », « De saison ») : nom et image réglés par l'équipe. */
++export type HomeFilter = { id: 'tout' | 'saison'; label: string; photoUrl: string | null };
++/** Annonce du bandeau d'accueil : un produit, une accroche, un texte. */
++/** Annonce du bandeau d'accueil. `startsAt` / `endsAt` : durée d'affichage fixée par l'équipe. */
++export type Campaign = {
++  /** Produit de l'annonce. Chaîne vide : une image de l'équipe, sans lien. */
++  id: string;
++  accent: string;
++  body: string;
++  startsAt?: string | null;
++  endsAt?: string | null;
++  /** Repère unique de l'annonce (deux annonces peuvent porter sur le même produit). */
++  key?: string;
++  /** Image créée par l'équipe : elle occupe tout le bandeau, à la place du modèle. */
++  imageUrl?: string | null;
++  /** Ce que fait un toucher : rien, un bouton vers le produit, ou l'image entière. */
++  link?: 'none' | 'button' | 'tap';
++  buttonLabel?: string | null;
++};
++
++/**
++ * Produit introuvable : ce que lit le client quand sa recherche ne donne rien — la question,
++ * puis la confirmation après l'envoi. `enabled: false` : l'équipe a désactivé ce message.
++ */
++export type ProductRequestMessage = {
++  enabled: boolean;
++  title: string;
++  body: string;
++  placeholder: string;
++  button: string;
++  thanks: string;
+ };
+ 
+ export type CatalogDocument = {
+@@ -105,6 +158,12 @@ export type CatalogDocument = {
+   example: boolean;
+   rules: QuantityRules;
+   products: CatalogProduct[];
++  /** Absents du catalogue embarqué : l'application garde alors ses rayons et annonces d'origine. */
++  shelves?: Shelf[];
++  homeFilters?: HomeFilter[];
++  campaigns?: Campaign[];
++  /** Produit introuvable : le message réglé dans la tour de contrôle. Absent : rien n'est proposé. */
++  productRequest?: ProductRequestMessage;
+ };
+ 
+ /** Valeurs de départ des règles (demandées pour les grossistes et importateurs). */
+@@ -179,9 +238,29 @@ function parseWholesale(raw: unknown): WholesaleOffer | null {
+   if (step) offer.stepQty = step;
+   if (max) offer.maxQty = max;
+   if ('containerKg' in o) offer.containerKg = positive(o.containerKg);
++  const byCountry = (Array.isArray(o.countryPrices) ? o.countryPrices : []).flatMap((g) => {
++    const group = (g && typeof g === 'object' ? g : {}) as Record<string, unknown>;
++    const own = (group.prices && typeof group.prices === 'object' ? group.prices : {}) as Record<
++      string,
++      unknown
++    >;
++    const countries = countryCodes(group.countries);
++    const exw = positive(own.EXW);
++    const fob = positive(own.FOB);
++    return countries.length > 0 && (exw !== null || fob !== null)
++      ? [{ countries, prices: { EXW: exw, FOB: fob } }]
++      : [];
++  });
++  if (byCountry.length > 0) offer.countryPrices = byCountry;
+   return offer;
+ }
+ 
++/** Codes de pays à deux lettres d'une liste reçue, en majuscules. */
++const countryCodes = (raw: unknown) =>
++  (Array.isArray(raw) ? raw : [])
++    .filter((c): c is string => typeof c === 'string' && /^[a-zA-Z]{2}$/.test(c))
++    .map((c) => c.toUpperCase());
++
+ function parseRetail(raw: unknown): RetailOffer | null {
+   if (!raw || typeof raw !== 'object') return null;
+   const o = raw as Record<string, unknown>;
+@@ -198,6 +277,13 @@ function parseRetail(raw: unknown): RetailOffer | null {
+   const max = positive(o.max);
+   if (min) offer.min = min;
+   if (max) offer.max = max;
++  const byCountry = (Array.isArray(o.countryPrices) ? o.countryPrices : []).flatMap((g) => {
++    const group = (g && typeof g === 'object' ? g : {}) as Record<string, unknown>;
++    const countries = countryCodes(group.countries);
++    const price = positive(group.price);
++    return countries.length > 0 && price !== null ? [{ countries, price }] : [];
++  });
++  if (byCountry.length > 0) offer.countryPrices = byCountry;
+   return offer;
+ }
+ 
+@@ -232,6 +318,158 @@ function parseProduct(raw: unknown): CatalogProduct | null {
+     wholesale: (Array.isArray(p.wholesale) ? p.wholesale : [])
+       .map(parseWholesale)
+       .filter((o): o is WholesaleOffer => !!o),
++    countries: parseCountries(p.countries),
++  };
++}
++
++function parseCountries(raw: unknown): ProductCountries {
++  const o = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
++  const mode = o.mode === 'sn' || o.mode === 'except' ? o.mode : 'all';
++  const except =
++    mode === 'except' && Array.isArray(o.except)
++      ? o.except.filter((c): c is string => typeof c === 'string').map((c) => c.toUpperCase())
++      : [];
++  return { mode, except };
++}
++
++/**
++ * Catalogue tel que le voit un client de ce pays (code ISO à deux lettres) : les produits
++ * réservés à d'autres pays en sont retirés, et chaque prix est celui de ce pays — le sien s'il en
++ * a un, sinon le prix global. Pays inconnu : les produits « Sénégal uniquement » ne s'affichent
++ * pas, et les prix globaux s'appliquent.
++ */
++export function forCountry(
++  doc: CatalogDocument,
++  country: string | null | undefined,
++): CatalogDocument {
++  const here = (country ?? '').toUpperCase();
++  let changed = false;
++  const products = doc.products
++    .filter((p) => {
++      const zone = p.countries;
++      if (!zone || zone.mode === 'all') return true;
++      if (zone.mode === 'sn') return here === 'SN';
++      return !zone.except.includes(here);
++    })
++    .map((p) => {
++      const priced =
++        !!p.retail?.countryPrices?.length || p.wholesale.some((o) => !!o.countryPrices?.length);
++      if (!priced) return p;
++      changed = true;
++      return {
++        ...p,
++        retail: p.retail ? retailFor(p.retail, here) : null,
++        wholesale: p.wholesale.map((o) => offerFor(o, here)),
++      };
++    });
++  return !changed && products.length === doc.products.length ? doc : { ...doc, products };
++}
++
++/** L'offre particuliers telle que la voit un client de ce pays : un seul prix, le sien. */
++function retailFor(retail: RetailOffer, here: string): RetailOffer {
++  const { countryPrices, ...rest } = retail;
++  const own = here ? countryPrices?.find((g) => g.countries.includes(here)) : undefined;
++  return own ? { ...rest, price: own.price } : rest;
++}
++
++/** L'offre professionnelle telle que la voit un client de ce pays. */
++function offerFor(offer: WholesaleOffer, here: string): WholesaleOffer {
++  const { countryPrices, ...rest } = offer;
++  const own = here ? countryPrices?.find((g) => g.countries.includes(here)) : undefined;
++  return own
++    ? {
++        ...rest,
++        prices: {
++          EXW: own.prices.EXW ?? offer.prices.EXW,
++          FOB: own.prices.FOB ?? offer.prices.FOB,
++        },
++      }
++    : rest;
++}
++
++const urlOf = (v: unknown) => {
++  const o = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
++  return typeof o.url === 'string' && /^https:\/\//.test(o.url) ? o.url : null;
++};
++
++function parseShelves(raw: unknown): Shelf[] | undefined {
++  if (!Array.isArray(raw)) return undefined;
++  return raw
++    .map((c): Shelf | null => {
++      const o = (c && typeof c === 'object' ? c : {}) as Record<string, unknown>;
++      if (typeof o.id !== 'string' || !o.id || typeof o.label !== 'string' || !o.label) return null;
++      const art = (
++        o.illustration && typeof o.illustration === 'object' ? o.illustration : {}
++      ) as Record<string, unknown>;
++      return {
++        id: o.id,
++        label: o.label,
++        photoUrl: urlOf(art),
++        photoProduct: typeof art.product === 'string' ? art.product : null,
++      };
++    })
++    .filter((s): s is Shelf => !!s);
++}
++
++function parseHomeFilters(raw: unknown): HomeFilter[] | undefined {
++  if (!Array.isArray(raw)) return undefined;
++  return raw
++    .map((f): HomeFilter | null => {
++      const o = (f && typeof f === 'object' ? f : {}) as Record<string, unknown>;
++      if (o.id !== 'tout' && o.id !== 'saison') return null;
++      return {
++        id: o.id,
++        label: text(o.label, o.id === 'tout' ? 'Tout' : 'De saison'),
++        photoUrl: urlOf(o.illustration),
++      };
++    })
++    .filter((f): f is HomeFilter => !!f);
++}
++
++function parseCampaigns(raw: unknown): Campaign[] | undefined {
++  if (!Array.isArray(raw)) return undefined;
++  return raw
++    .map((c): Campaign | null => {
++      const o = (c && typeof c === 'object' ? c : {}) as Record<string, unknown>;
++      const date = (v: unknown) =>
++        typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : null;
++      const imageUrl =
++        typeof o.imageUrl === 'string' && /^https:\/\//.test(o.imageUrl) ? o.imageUrl : null;
++      const id = typeof o.id === 'string' ? o.id : '';
++      // Le modèle a toujours un produit et un bouton ; une image peut se passer des deux.
++      const link = !imageUrl ? 'button' : o.link === 'none' || o.link === 'tap' ? o.link : 'button';
++      if (!id && !(imageUrl && link === 'none')) return null;
++      return {
++        id: link === 'none' ? '' : id,
++        accent: text(o.accent),
++        body: text(o.body),
++        startsAt: date(o.startsAt),
++        endsAt: date(o.endsAt),
++        key: typeof o.key === 'string' && o.key ? o.key : undefined,
++        imageUrl,
++        link,
++        buttonLabel:
++          imageUrl && link === 'button' ? text(o.buttonLabel) || 'Voir le produit' : null,
++      };
++    })
++    .filter((c): c is Campaign => !!c);
++}
++
++function parseProductRequest(raw: unknown): ProductRequestMessage | undefined {
++  if (!raw || typeof raw !== 'object') return undefined;
++  const o = raw as Record<string, unknown>;
++  const title = text(o.title).trim();
++  const button = text(o.button).trim();
++  const thanks = text(o.thanks).trim();
++  // Sans question, sans bouton ou sans confirmation, il n'y a rien à montrer.
++  if (!title || !button || !thanks) return undefined;
++  return {
++    enabled: o.enabled !== false,
++    title,
++    body: text(o.body).trim(),
++    placeholder: text(o.placeholder).trim(),
++    button,
++    thanks,
+   };
+ }
+ 
+@@ -254,5 +492,10 @@ export function parseCatalog(raw: unknown): CatalogDocument | null {
+     example: d.example === true,
+     rules: parseRules(d.rules),
+     products,
++    productRequest: parseProductRequest(d.productRequest),
++    shelves: parseShelves(d.categories),
++    homeFilters: parseHomeFilters(d.filters),
++    // `banners` : toutes les annonces, images de l'équipe comprises ; `campaigns` : le modèle seul.
++    campaigns: parseCampaigns(d.banners) ?? parseCampaigns(d.campaigns),
+   };
+ }
+diff --git a/lib/config.ts b/lib/config.ts
+index 6ad213d..f11c901 100644
+--- a/lib/config.ts
++++ b/lib/config.ts
+@@ -1,3 +1,13 @@
++/**
++ * Adresse de la tour de contrôle TROPICAURA (administration du catalogue, des publications et des
++ * commandes). Tout ce que l'équipe y règle arrive ici : il n'y a que cette ligne à changer si
++ * son adresse change.
++ */
++export const CONTROL_TOWER = 'https://8fnxta.vercel.app';
++
++/** Relecture du catalogue, des publications et du suivi des commandes : toutes les N secondes. */
++export const SYNC_EVERY_SEC = 60;
++
+ /**
+  * Réglages du prototype.
+  *
+@@ -5,14 +15,14 @@
+  * professionnelles. Tant qu'elle vaut `null`, rien n'est transmis : les demandes restent
+  * enregistrées sur l'appareil, marquées « en attente de transmission ».
+  */
+-export const TEAM_ENDPOINT: string | null = null;
++export const TEAM_ENDPOINT: string | null = `${CONTROL_TOWER}/api/orders`;
+ 
+ /**
+  * Outils de test : affiche les boutons « Mode test » qui simulent les réponses de l'équipe
+  * (validation, préparation, expédition, livraison). À passer à `false` dès que le suivi réel
+  * est branché.
+  */
+-export const TEST_TOOLS = true;
++export const TEST_TOOLS = false;
+ 
+ /** Commandes professionnelles : quantités en kilos, par produit. */
+ export const PRO_MIN_KG = 500;
+@@ -25,7 +35,21 @@ export const PRO_MAX_KG = 100000;
+  * VIDEOS_ENDPOINT : adresse du futur outil de publication. Tant qu'elle vaut `null`, l'application
+  * montre les vidéos de démonstration embarquées et les vues ne sont comptées que sur l'appareil.
+  */
+-export const VIDEOS_ENDPOINT: string | null = null;
++export const VIDEOS_ENDPOINT: string | null = `${CONTROL_TOWER}/api/publications?public=videos`;
++
++/**
++ * Publications photo de l'équipe (espace « Publications », à côté des vidéos) : une à dix photos
++ * que l'on fait défiler de côté, avec une description. `null` : aucune publication photo.
++ */
++export const POSTS_ENDPOINT: string | null = `${CONTROL_TOWER}/api/publications?public=photos`;
++
++/**
++ * Statistiques de l'équipe : ce que ce compte a vu, aimé et commenté dans l'espace
++ * « Publications » (vidéos et photos) est envoyé ici. `null` : rien ne part, tout reste sur
++ * l'appareil.
++ */
++export const ENGAGEMENT_ENDPOINT: string | null =
++  `${CONTROL_TOWER}/api/publications?public=reactions`;
+ 
+ /** Une vidéo compte comme regardée après ce temps de lecture (ou à sa fin, si elle est plus courte). */
+ export const WATCHED_AFTER_SEC = 3;
+@@ -45,7 +69,7 @@ export const SWIPE_FORWARD: 1 | -1 = -1;
+  * format décrit dans `lib/catalog/schema.ts`. Tant qu'elle vaut `null`, rien n'est connecté :
+  * l'application affiche le catalogue d'exemple embarqué.
+  */
+-export const CATALOG_ENDPOINT: string | null = null;
++export const CATALOG_ENDPOINT: string | null = `${CONTROL_TOWER}/api/catalog`;
+ 
+ /**
+  * Mise en page « ordinateur » de la version web (barre de navigation en haut, pages pleine
+diff --git a/lib/data.ts b/lib/data.ts
+index f50a6b9..b744068 100644
+--- a/lib/data.ts
++++ b/lib/data.ts
+@@ -1,4 +1,5 @@
+-export type CategoryId = 'fruits' | 'rouges' | 'agrumes' | 'exotiques' | 'legumes' | 'aromates';
++/** Identifiant d'un rayon. Les rayons viennent de la tour de contrôle : la liste n'est pas fermée. */
++export type CategoryId = string;
+ export type FilterId = 'tout' | 'saison' | CategoryId;
+ 
+ export const FILTERS: { id: FilterId; label: string }[] = [
+@@ -961,18 +962,34 @@ export const CAMPAIGNS: { id: string; accent: string; body: string }[] = [
+   },
+ ];
+ 
+-/** Moyens de paiement : le règlement a lieu à la confirmation de la commande. */
++/**
++ * Moyens de paiement des particuliers. Orange Money et Wave servent surtout au Sénégal ; depuis
++ * l'étranger, le virement ou la carte bancaire. Le paiement est obligatoire : la commande n'est
++ * confirmée par l'équipe qu'une fois le paiement reçu.
++ */
+ export const PAYMENTS = [
+   {
+-    id: 'carte',
+-    title: 'Carte bancaire',
+-    detail: 'Débitée à la confirmation',
+-    icon: 'card-outline',
++    id: 'orange_money',
++    title: 'Orange Money',
++    detail: 'Surtout au Sénégal',
++    icon: 'phone-portrait-outline',
+   },
+   {
+-    id: 'mobile',
+-    title: 'Mobile money',
+-    detail: 'Débité de votre portefeuille mobile',
++    id: 'wave',
++    title: 'Wave',
++    detail: 'Surtout au Sénégal',
+     icon: 'phone-portrait-outline',
+   },
++  {
++    id: 'virement',
++    title: 'Virement bancaire',
++    detail: 'Depuis l’étranger',
++    icon: 'business-outline',
++  },
++  {
++    id: 'carte',
++    title: 'Carte bancaire',
++    detail: 'Partout',
++    icon: 'card-outline',
++  },
+ ] as const;
+diff --git a/lib/locate.ts b/lib/locate.ts
+index dcdfdeb..aa7e0a5 100644
+--- a/lib/locate.ts
++++ b/lib/locate.ts
+@@ -56,6 +56,38 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+   });
+ }
+ 
++export type Spot = { lat: number; lng: number; accuracy: number | null };
++
++/**
++ * Position du téléphone, pour la livraison à domicile au Sénégal : le livreur s'y rend.
++ * `ask` : demande l'autorisation si elle n'a pas encore été donnée (à la confirmation du panier).
++ * Sans `ask`, ne dérange jamais le client : renvoie la position seulement s'il l'a déjà autorisée.
++ * Renvoie `null` si la localisation est refusée ou indisponible.
++ */
++export async function position(ask: boolean): Promise<Spot | null> {
++  try {
++    const permission = ask
++      ? await withTimeout(Location.requestForegroundPermissionsAsync(), 30000)
++      : await Location.getForegroundPermissionsAsync();
++    if (!permission.granted) return null;
++    // `maximumAge` : sur le web, sans cela, le navigateur rend indéfiniment la première position
++    // relevée ; le livreur irait à un endroit que le client a quitté. Ignoré sur iOS et Android,
++    // qui relèvent toujours une position fraîche.
++    const options = {
++      accuracy: ask ? Location.Accuracy.High : Location.Accuracy.Balanced,
++      maximumAge: 10000,
++    } as Location.LocationOptions;
++    const found = await withTimeout(Location.getCurrentPositionAsync(options), 20000);
++    return {
++      lat: found.coords.latitude,
++      lng: found.coords.longitude,
++      accuracy: found.coords.accuracy ?? null,
++    };
++  } catch {
++    return null;
++  }
++}
++
+ /**
+  * Position de l'utilisateur → adresse proposée.
+  * - iOS / Android : le géocodeur du système donne pays, rue, code postal et ville.
+diff --git a/lib/posts.ts b/lib/posts.ts
+new file mode 100644
+index 0000000..1117e24
+--- /dev/null
++++ b/lib/posts.ts
+@@ -0,0 +1,68 @@
++import { POSTS_ENDPOINT } from './config';
++
++/**
++ * Publications photo de l'équipe, visibles dans Favoris › Publications : une à dix photos que
++ * l'on fait défiler de côté, avec une description dessous. Seule l'équipe publie, depuis la tour
++ * de contrôle. Comme les vidéos, elles ne mènent à aucun produit : on les regarde, on les aime,
++ * on les commente.
++ */
++export type PostImage = { url: string; width: number; height: number };
++
++export type PhotoPost = {
++  id: string;
++  images: PostImage[];
++  description: string;
++  /** Date de publication, au format AAAA-MM-JJ. */
++  publishedAt: string;
++  audience: 'tous' | 'particulier' | 'pro';
++};
++
++/** Publications visibles pour un type de compte, de la plus récente à la plus ancienne. */
++export function postsFor(list: PhotoPost[], pro: boolean) {
++  const mine = pro ? 'pro' : 'particulier';
++  return list
++    .filter((p) => p.audience === 'tous' || p.audience === mine)
++    .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
++}
++
++/**
++ * Publications photo de l'équipe. Renvoie `null` si la tour de contrôle n'est pas joignable :
++ * l'application garde alors celles qu'elle avait.
++ */
++export async function fetchPhotoPosts(): Promise<PhotoPost[] | null> {
++  if (!POSTS_ENDPOINT) return null;
++  try {
++    const response = await fetch(POSTS_ENDPOINT);
++    if (!response.ok) return null;
++    const raw: unknown = await response.json();
++    if (!Array.isArray(raw)) return null;
++    return raw.flatMap((item): PhotoPost[] => {
++      const o = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
++      const images = (Array.isArray(o.images) ? o.images : []).flatMap((i): PostImage[] => {
++        const img = (i && typeof i === 'object' ? i : {}) as Record<string, unknown>;
++        const size = (v: unknown) => (typeof v === 'number' && v > 0 ? v : 0);
++        return typeof img.url === 'string' && /^https:\/\//.test(img.url)
++          ? [
++              {
++                url: img.url,
++                width: size(img.width),
++                height: size(img.height),
++              },
++            ]
++          : [];
++      });
++      if (typeof o.id !== 'string' || images.length === 0) return [];
++      return [
++        {
++          id: o.id,
++          images,
++          description: typeof o.description === 'string' ? o.description : '',
++          publishedAt: typeof o.publishedAt === 'string' ? o.publishedAt.slice(0, 10) : '',
++          audience: o.audience === 'pro' || o.audience === 'particulier' ? o.audience : 'tous',
++        },
++      ];
++    });
++  } catch {
++    return null;
++  }
++}
+diff --git a/lib/store.tsx b/lib/store.tsx
+index 67edf17..38aee86 100644
+--- a/lib/store.tsx
++++ b/lib/store.tsx
+@@ -7,24 +7,43 @@ import React, {
+   useRef,
+   useState,
+ } from 'react';
++import { AppState } from 'react-native';
+ import AsyncStorage from '@react-native-async-storage/async-storage';
+ import { Space, allProducts, retailSpace, wholesaleSpace } from './catalog/build';
+-import type { CatalogDocument, QuantityRules } from './catalog/schema';
++import type {
++  Campaign,
++  CatalogDocument,
++  ProductRequestMessage,
++  QuantityRules,
++  Shelf,
++} from './catalog/schema';
++import { forCountry } from './catalog/schema';
++import { Spot, deviceCountry, position } from './locate';
+ import { CatalogOrigin, START_CATALOG, loadCatalog } from './catalog/source';
+ import { countryName, isCountry, transportFee } from './countries';
++import { CATEGORY_LABEL } from './data';
+ import type { Product } from './data';
++import { SYNC_EVERY_SEC } from './config';
+ import { euro, formatAddress, kgEquivalent, maxQty, minQty, round2 } from './format';
+ import { isEmail, normEmail, phoneDigits, tidyPhone } from './identity';
+-import { buildRequestPayload, transmit } from './transmission';
++import {
++  buildOrderPayload,
++  buildProductRequestPayload,
++  buildRequestPayload,
++  fetchTracking,
++  sendPosition,
++  transmit,
++} from './transmission';
++import type { TransmitResult } from './transmission';
+ import {
+   DEMO_VIDEOS,
+   TeamVideo,
+   fetchTeamVideos,
+-  reportComment,
+-  reportLike,
+-  reportView,
++  Engagement,
++  sendEngagement,
+   videosFor,
+ } from './videos';
++import { PhotoPost, fetchPhotoPosts, postsFor } from './posts';
+ 
+ // ───────────── Stockage
+ // Tout est enregistré sur l'appareil (pas de serveur) : la liste des comptes et la session
+@@ -121,6 +140,12 @@ export type Order = {
+   note: string;
+   status: StatusId;
+   statusAt: number;
++  /** Faux tant que la commande n'est pas arrivée à la tour de contrôle (elle est alors retentée). */
++  transmitted?: boolean;
++  /** Dernier message de l'équipe sur cette commande, reçu avec son statut. */
++  teamMessage?: string;
++  /** Position du téléphone à la confirmation du panier, si le client l'a autorisée. */
++  location?: Spot | null;
+ };
+ 
+ export type Incoterm = 'EXW' | 'FOB';
+@@ -148,8 +173,12 @@ export type ProRequest = {
+   statusAt: number;
+   /** Date de prise en charge par l'équipe : la demande passe alors dans « Commandes ». */
+   takenAt: number | null;
+-  /** Vrai une fois la demande reçue par le logiciel de l'équipe (pas encore connecté). */
++  /** Vrai une fois la demande reçue par la tour de contrôle. */
+   transmitted: boolean;
++  /** Étape en clair, réglée par l'équipe : « Contacté », « En discussion », « Contrat conclu »… */
++  stageLabel?: string;
++  /** Dernier message de l'équipe sur cette demande. */
++  teamMessage?: string;
+ };
+ 
+ export type VideoComment = { id: string; text: string; at: number };
+@@ -250,6 +279,8 @@ function sanitize(
+       // Les commandes d'avant le suivi par étapes sont considérées comme terminées.
+       status: isStatus(o.status) ? o.status : 'livree',
+       statusAt: o.statusAt ?? o.createdAt,
++      ...(typeof o.transmitted === 'boolean' ? { transmitted: o.transmitted } : null),
++      ...(typeof o.teamMessage === 'string' ? { teamMessage: o.teamMessage } : null),
+     }));
+ 
+   return {
+@@ -320,6 +351,20 @@ type Store = Persisted & {
+   catalogExample: boolean;
+   /** Règles de quantité des professionnels, lues dans le catalogue. */
+   rules: QuantityRules;
++  /** Rayons réglés dans la tour de contrôle (vide : ceux d'origine de l'application). */
++  shelves: Shelf[];
++  /** Nom et image des deux filtres de l'accueil. */
++  homeFilters: Record<'tout' | 'saison', { label: string; photoUrl: string | null }>;
++  /** Annonces du bandeau d'accueil. */
++  campaigns: Campaign[];
++  /** Produit introuvable : le message à afficher, ou `null` si rien n'est proposé. */
++  productRequest: ProductRequestMessage | null;
++  /** Envoie à l'équipe le produit que ce client recherche et ne trouve pas. */
++  requestProduct: (product: string) => Promise<TransmitResult>;
++  /** Nom d'un rayon, d'après la tour de contrôle. */
++  shelfLabel: (id: string) => string;
++  /** Dernier changement d'état annoncé par l'équipe : à signaler au client. */
++  teamNotice: { id: string; title: string; message: string } | null;
+   setIncoterm: (i: Incoterm) => void;
+ 
+   toggleFavorite: (id: string) => boolean;
+@@ -339,7 +384,13 @@ type Store = Persisted & {
+   selectAddress: (id: string) => void;
+   addAddress: (address: NewAddress) => void;
+ 
+-  placeOrder: (o: { transport: boolean; payment: string; note: string; contact: Contact }) => Order;
++  placeOrder: (o: {
++    transport: boolean;
++    payment: string;
++    note: string;
++    contact: Contact;
++    location?: Spot | null;
++  }) => Order;
+   placeRequest: (r: {
+     company: string;
+     contactName: string;
+@@ -357,10 +408,12 @@ type Store = Persisted & {
+ 
+   /** Vidéos de l'équipe visibles par ce compte, de la plus récente à la plus ancienne. */
+   videos: TeamVideo[];
++  /** Publications photo de l'équipe visibles par ce compte, de la plus récente à la plus ancienne. */
++  posts: PhotoPost[];
+   /** Nombre de vidéos pas encore regardées : c'est le compteur de l'onglet Favoris. */
+   newVideoCount: number;
+   markWatched: (id: string) => void;
+-  /** J'aime et commentaires : enregistrés sur l'appareil, pas encore transmis à l'équipe. */
++  /** J'aime et commentaires, vidéos et photos : enregistrés sur l'appareil et transmis à l'équipe. */
+   toggleLike: (id: string) => boolean;
+   addComment: (videoId: string, text: string) => void;
+   removeComment: (videoId: string, commentId: string) => void;
+@@ -373,6 +426,34 @@ const nextStatus = (s: StatusId): StatusId | null => {
+   return i >= 0 && i < FLOW.length - 1 ? FLOW[i + 1] : null;
+ };
+ 
++/**
++ * Relecture automatique : tout de suite, puis toutes les `SYNC_EVERY_SEC` secondes, et à chaque
++ * retour dans l'application. `key` : relance immédiate quand il change (changement de compte).
++ */
++function useSync(task: () => Promise<void>, key?: unknown) {
++  useEffect(() => {
++    let running = false;
++    const run = () => {
++      if (running) return;
++      running = true;
++      task()
++        .catch(() => {})
++        .finally(() => {
++          running = false;
++        });
++    };
++    run();
++    const timer = setInterval(run, SYNC_EVERY_SEC * 1000);
++    const sub = AppState.addEventListener('change', (state) => {
++      if (state === 'active') run();
++    });
++    return () => {
++      clearInterval(timer);
++      sub.remove();
++    };
++  }, [task, key]);
++}
++
+ export function StoreProvider({ children }: { children: React.ReactNode }) {
+   const [auth, setAuth] = useState<Auth>({ accounts: [], sessionId: null });
+   // Les données et le compte auquel elles appartiennent changent toujours ensemble.
+@@ -383,15 +464,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+   // Publications de l'équipe : exemples embarqués, remplacés par les vraies dès que l'outil
+   // de publication est connecté.
+   const [published, setPublished] = useState<TeamVideo[]>(DEMO_VIDEOS);
+-  useEffect(() => {
+-    let alive = true;
+-    fetchTeamVideos().then((list) => {
+-      if (alive && list) setPublished(list);
+-    });
+-    return () => {
+-      alive = false;
+-    };
+-  }, []);
++  // Publications photo de l'équipe : aucune tant que la tour de contrôle n'en a pas publié.
++  const [photoPosts, setPhotoPosts] = useState<PhotoPost[]>([]);
++  const postsSeen = useRef('');
++  useSync(
++    useCallback(async () => {
++      const list = await fetchPhotoPosts();
++      if (!list) return;
++      const print = JSON.stringify(list);
++      if (print === postsSeen.current) return;
++      postsSeen.current = print;
++      setPhotoPosts(list);
++    }, []),
++  );
++  const videosSeen = useRef('');
++  useSync(
++    useCallback(async () => {
++      const list = await fetchTeamVideos();
++      if (!list) return;
++      // On ne redessine que si la liste a réellement changé.
++      const print = JSON.stringify(list);
++      if (print === videosSeen.current) return;
++      videosSeen.current = print;
++      setPublished(list);
++    }, []),
++  );
+ 
+   const account = useMemo(
+     () => (box ? (auth.accounts.find((a) => a.id === box.id) ?? null) : null),
+@@ -405,30 +502,75 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+   const [cat, setCat] = useState(START_CATALOG);
+   const catRef = useRef(cat);
+   catRef.current = cat;
+-  useEffect(() => {
+-    let alive = true;
+-    loadCatalog().then((next) => {
+-      if (alive && next) setCat(next);
+-    });
+-    return () => {
+-      alive = false;
+-    };
+-  }, []);
++  // Relu à l'ouverture, toutes les minutes et à chaque retour dans l'application : un prix, une
++  // disponibilité, un rayon ou une annonce modifiés dans la tour de contrôle arrivent seuls.
++  const catSeen = useRef('');
++  useSync(
++    useCallback(async () => {
++      const next = await loadCatalog();
++      if (!next) return;
++      const print = `${next.origin}:${JSON.stringify(next.doc)}`;
++      if (print === catSeen.current) return;
++      catSeen.current = print;
++      setCat(next);
++    }, []),
++  );
+ 
+   const accountType = account?.type ?? null;
+   const activity = account?.activity ?? null;
+   const usesModes = !!account && usesModesFor(account);
++  // Pays du client : celui de son adresse de livraison, sinon celui de l'appareil (fuseau horaire).
++  // Les produits réservés à d'autres pays ne lui sont pas montrés.
++  const shownCountry = useMemo(() => {
++    const adr = data.addresses.find((a) => a.id === data.addressId) ?? data.addresses[0];
++    return adr?.country || deviceCountry() || '';
++  }, [data.addresses, data.addressId]);
++  const shownDoc = useMemo(() => forCountry(cat.doc, shownCountry), [cat.doc, shownCountry]);
+   const space = useMemo(
+-    () => spaceFor(cat.doc, accountType ? { type: accountType, activity } : null, data.incoterm),
+-    [cat.doc, accountType, activity, data.incoterm],
++    () => spaceFor(shownDoc, accountType ? { type: accountType, activity } : null, data.incoterm),
++    [shownDoc, accountType, activity, data.incoterm],
+   );
+   const catalog = space.catalog;
+   const byId = space.byId;
+   const baseById = useMemo(() => allProducts(cat.doc), [cat.doc]);
+ 
++  // Rayons, filtres de l'accueil et annonces : ceux de la tour de contrôle quand elle les publie.
++  const shelves = useMemo(() => cat.doc.shelves ?? [], [cat.doc]);
++  const homeFilters = useMemo(() => {
++    const of = (id: 'tout' | 'saison', fallback: string) => {
++      const f = cat.doc.homeFilters?.find((x) => x.id === id);
++      return { label: f?.label || fallback, photoUrl: f?.photoUrl ?? null };
++    };
++    return { tout: of('tout', 'Tout'), saison: of('saison', 'De saison') };
++  }, [cat.doc]);
++  // Annonces du bandeau : uniquement celles que l'équipe a créées et qui sont en cours.
++  // Une annonce ne s'affiche que si son produit est montré dans le pays du client.
++  const campaigns = useMemo(
++    () =>
++      (cat.doc.campaigns ?? []).filter(
++        (c) => !c.id || shownDoc.products.some((p) => p.id === c.id),
++      ),
++    [cat.doc, shownDoc],
++  );
++  // Produit introuvable : proposé seulement si la tour de contrôle fournit le message et que
++  // l'équipe ne l'a pas désactivé.
++  const productRequest = cat.doc.productRequest?.enabled ? cat.doc.productRequest : null;
++  const requestProduct = useCallback(
++    async (product: string): Promise<TransmitResult> => {
++      if (!account) return 'failed';
++      const country = isCountry(shownCountry) ? countryName(shownCountry) : '';
++      return transmit(buildProductRequestPayload(product, account, country));
++    },
++    [account, shownCountry],
++  );
++  const shelfLabel = useCallback(
++    (id: string) => shelves.find((x) => x.id === id)?.label ?? CATEGORY_LABEL[id] ?? id,
++    [shelves],
++  );
++
+   // Valeurs courantes, pour les actions qui ne doivent pas être recréées à chaque rendu.
+-  const live = useRef({ auth, data, byId, account, isPro });
+-  live.current = { auth, data, byId, account, isPro };
++  const live = useRef({ auth, data, byId, baseById, account, isPro });
++  live.current = { auth, data, byId, baseById, account, isPro };
+ 
+   const setData = useCallback((fn: (d: Persisted) => Persisted) => {
+     setBox((b) => (b ? { ...b, data: fn(b.data) } : b));
+@@ -693,8 +835,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+   };
+ 
+   // ───── Commande d'un particulier
++  // Elle part à la tour de contrôle dès qu'elle est passée ; tant qu'elle n'y est pas arrivée
++  // (réseau absent), elle est retentée à chaque ouverture du compte.
++  const sendOrderToTeam = useCallback(
++    (order: Order) => {
++      const { baseById: products, account: who } = live.current;
++      const describe = (lineId: string) => {
++        const p = products[lineId.split(':')[0]];
++        return p ? { name: p.name, unit: p.unit, noun: p.noun } : null;
++      };
++      transmit(buildOrderPayload(order, who ?? undefined, describe)).then((result) => {
++        if (result !== 'sent') return;
++        setData((d) => ({
++          ...d,
++          orders: d.orders.map((o) => (o.id === order.id ? { ...o, transmitted: true } : o)),
++        }));
++      });
++    },
++    [setData],
++  );
++
+   const placeOrder = useCallback<Store['placeOrder']>(
+-    ({ transport, payment, note, contact }) => {
++    ({ transport, payment, note, contact, location }) => {
+       const d = live.current.data;
+       const lines = currentLines();
+       const subtotal = round2(lines.reduce((s, l) => s + l.price * l.qty, 0));
+@@ -719,11 +881,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+         note,
+         status: 'attente',
+         statusAt: now,
++        transmitted: false,
++        location: location ?? null,
+       };
+       setData((prev) => ({ ...prev, cart: {}, contact, orders: [order, ...prev.orders] }));
++      sendOrderToTeam(order);
+       return order;
+     },
+-    [setData],
++    [setData, sendOrderToTeam],
+   );
+ 
+   // ───── Demande d'un professionnel
+@@ -770,9 +935,94 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+   // À l'ouverture d'un compte professionnel, on retente les demandes pas encore transmises.
+   const boxId = box?.id;
+   useEffect(() => {
+-    if (!boxId || !live.current.isPro) return;
+-    live.current.data.requests.filter((r) => !r.transmitted).forEach(sendToTeam);
+-  }, [boxId, sendToTeam]);
++    if (!boxId) return;
++    if (live.current.isPro)
++      live.current.data.requests.filter((r) => !r.transmitted).forEach(sendToTeam);
++    else live.current.data.orders.filter((o) => o.transmitted === false).forEach(sendOrderToTeam);
++  }, [boxId, sendToTeam, sendOrderToTeam]);
++
++  // ───── Suivi : les statuts réglés par l'équipe dans la tour de contrôle
++  // Relus toutes les minutes : quand l'équipe passe une commande « en livraison » ou « livrée »,
++  // le client le voit ici sans rien faire, avec le message de l'équipe.
++  const [teamNotice, setTeamNotice] = useState<Store['teamNotice']>(null);
++  useSync(
++    useCallback(async () => {
++      const who = live.current.account;
++      if (!who) return;
++      const tracked = await fetchTracking(who.id);
++      if (!tracked || tracked.length === 0) return;
++      const d = live.current.data;
++      // Livraison à domicile en cours : la position du téléphone est rafraîchie pour le livreur,
++      // sans redemander l'autorisation (elle a été donnée, ou non, à la confirmation du panier).
++      const followed = tracked.filter(
++        (t) => t.tracking && !t.pro && d.orders.some((o) => o.number === t.reference),
++      );
++      if (followed.length > 0) {
++        position(false).then((spot) => {
++          if (spot) followed.forEach((t) => sendPosition(who.id, t.reference, spot));
++        });
++      }
++      const find = (number: string, pro: boolean) =>
++        tracked.find((t) => t.reference === number && t.pro === pro);
++      // Une demande annulée par le client lui-même reste annulée ici.
++      const moved = [
++        ...d.orders.map((o) => ({
++          row: o,
++          t: find(o.number, false),
++          label: undefined as string | undefined,
++        })),
++        ...d.requests
++          .filter((r) => r.status !== 'annulee')
++          .map((r) => ({ row: r, t: find(r.number, true), label: r.stageLabel })),
++      ].filter(
++        ({ row, t, label }) =>
++          t &&
++          (t.status !== row.status ||
++            t.message !== (row.teamMessage ?? '') ||
++            t.stageLabel !== label),
++      );
++      if (moved.length === 0) return;
++      setData((prev) => ({
++        ...prev,
++        orders: prev.orders.map((o) => {
++          const t = find(o.number, false);
++          return t
++            ? {
++                ...o,
++                status: t.status,
++                statusAt: t.statusAt,
++                teamMessage: t.message,
++                transmitted: true,
++              }
++            : o;
++        }),
++        requests: prev.requests.map((r) => {
++          const t = r.status === 'annulee' ? undefined : find(r.number, true);
++          if (!t) return r;
++          const taken = t.status !== 'attente' && t.status !== 'annulee';
++          return {
++            ...r,
++            status: t.status,
++            statusAt: t.statusAt,
++            teamMessage: t.message,
++            stageLabel: t.stageLabel,
++            takenAt: r.takenAt ?? (taken ? t.statusAt : null),
++            transmitted: true,
++          };
++        }),
++      }));
++      const latest = moved
++        .map((m) => m.t as NonNullable<typeof m.t>)
++        .sort((a, b) => b.statusAt - a.statusAt)[0];
++      if (latest.message)
++        setTeamNotice({
++          id: `${latest.reference}:${latest.statusAt}:${latest.stageLabel ?? latest.status}`,
++          title: latest.title,
++          message: latest.message,
++        });
++    }, [setData]),
++    boxId,
++  );
+ 
+   const cancelRequest = useCallback(
+     (id: string) => {
+@@ -837,6 +1087,51 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+   );
+ 
+   const videos = useMemo(() => videosFor(published, isPro), [published, isPro]);
++  const posts = useMemo(() => postsFor(photoPosts, isPro), [photoPosts, isPro]);
++
++  // Ce que ce compte a vu, aimé et commenté dans l'espace « Publications » part vers la tour de
++  // contrôle : ce sont les statistiques de l'équipe. On envoie l'état complet, peu après chaque
++  // geste ; s'il ne part pas (pas de réseau), il est renvoyé à la prochaine relecture.
++  const engagement = useMemo<Engagement | null>(
++    () =>
++      account
++        ? {
++            account: { id: account.id, name: account.name, type: account.type },
++            views: data.watched,
++            likes: data.likes,
++            comments: Object.entries(data.comments).flatMap(([publicationId, list]) =>
++              list.map((c) => ({ id: c.id, publicationId, text: c.text, at: c.at })),
++            ),
++          }
++        : null,
++    [account, data.watched, data.likes, data.comments],
++  );
++  const engagementNow = useRef(engagement);
++  engagementNow.current = engagement;
++  const engagementSent = useRef('');
++  const engagementSending = useRef(false);
++  const pushEngagement = useCallback(async () => {
++    if (engagementSending.current) return;
++    engagementSending.current = true;
++    try {
++      // L'état a pu changer pendant un envoi : on recommence tant qu'il reste du nouveau.
++      for (let i = 0; i < 3; i++) {
++        const now = engagementNow.current;
++        if (!now) break;
++        const print = JSON.stringify(now);
++        if (print === engagementSent.current) break;
++        if (!(await sendEngagement(now))) break;
++        engagementSent.current = print;
++      }
++    } finally {
++      engagementSending.current = false;
++    }
++  }, []);
++  useEffect(() => {
++    const timer = setTimeout(pushEngagement, 800);
++    return () => clearTimeout(timer);
++  }, [engagement, pushEngagement]);
++  useSync(pushEngagement);
+   const newVideoCount = useMemo(
+     () => videos.filter((v) => !data.watched.includes(v.id)).length,
+     [videos, data.watched],
+@@ -845,8 +1140,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+     (id: string) => {
+       if (live.current.data.watched.includes(id)) return;
+       setData((d) => (d.watched.includes(id) ? d : { ...d, watched: [...d.watched, id] }));
+-      // Pas encore connecté : la vue n'est comptée que sur cet appareil.
+-      reportView(id, live.current.account?.id ?? null);
+     },
+     [setData],
+   );
+@@ -858,7 +1151,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+         ...d,
+         likes: liked ? [...d.likes.filter((x) => x !== id), id] : d.likes.filter((x) => x !== id),
+       }));
+-      reportLike(id, liked, live.current.account?.id ?? null);
+       return liked;
+     },
+     [setData],
+@@ -873,7 +1165,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+         ...d,
+         comments: { ...d.comments, [videoId]: [...(d.comments[videoId] ?? []), comment] },
+       }));
+-      reportComment(videoId, clean, live.current.account?.id ?? null);
+     },
+     [setData],
+   );
+@@ -911,6 +1202,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+       catalogOrigin: cat.origin,
+       catalogExample: cat.doc.example,
+       rules: cat.doc.rules,
++      shelves,
++      homeFilters,
++      campaigns,
++      shelfLabel,
++      productRequest,
++      requestProduct,
++      teamNotice,
+       setIncoterm,
+       toggleFavorite,
+       setQty,
+@@ -926,6 +1224,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+       advanceRequest,
+       reorder,
+       videos,
++      posts,
+       newVideoCount,
+       markWatched,
+       toggleLike,
+@@ -950,6 +1249,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+       baseById,
+       usesModes,
+       cat,
++      shelves,
++      homeFilters,
++      campaigns,
++      shelfLabel,
++      productRequest,
++      requestProduct,
++      teamNotice,
+       setIncoterm,
+       toggleFavorite,
+       setQty,
+@@ -965,6 +1271,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
+       advanceRequest,
+       reorder,
+       videos,
++      posts,
+       newVideoCount,
+       markWatched,
+       toggleLike,
+@@ -1023,7 +1330,7 @@ const view = (
+ /** Commande d'un particulier : validation par l'équipe, préparation, expédition, livraison. */
+ export function orderView(o: Order): TrackView {
+   const destination = o.country ? ` Destination : ${countryName(o.country)}.` : '';
+-  return view(
++  const shown = view(
+     o.status,
+     {
+       attente: 'En validation',
+@@ -1049,11 +1356,13 @@ export function orderView(o: Order): TrackView {
+       annulee: 'Cette commande est annulée.',
+     },
+   );
++  // Le message de l'équipe, reçu avec le statut, remplace le message générique.
++  return o.teamMessage ? { ...shown, message: o.teamMessage } : shown;
+ }
+ 
+ /** Demande d'un professionnel : réponse de l'équipe, puis commande suivie jusqu'à la livraison. */
+ export function requestView(r: ProRequest): TrackView {
+-  return view(
++  const shown = view(
+     r.status,
+     {
+       attente: 'En attente de réponse',
+@@ -1078,4 +1387,10 @@ export function requestView(r: ProRequest): TrackView {
+       annulee: 'Cette demande est annulée.',
+     },
+   );
++  // L'étape réglée par l'équipe (« Contacté », « Contrat conclu »…) et son message priment.
++  return {
++    ...shown,
++    label: r.status !== 'annulee' && r.stageLabel ? r.stageLabel : shown.label,
++    message: r.teamMessage || shown.message,
++  };
+ }
+diff --git a/lib/transmission.ts b/lib/transmission.ts
+index 77aaa31..a7331d7 100644
+--- a/lib/transmission.ts
++++ b/lib/transmission.ts
+@@ -1,5 +1,6 @@
+ import { TEAM_ENDPOINT } from './config';
+-import type { Account, ProRequest } from './store';
++import { countryName } from './countries';
++import type { Account, Order, ProRequest, StatusId } from './store';
+ 
+ /**
+  * Transmission des demandes professionnelles au logiciel interne de l'équipe.
+@@ -50,6 +51,29 @@ export function buildRequestPayload(request: ProRequest, account: Account | unde
+   };
+ }
+ 
++/**
++ * Produit introuvable : le client a cherché un produit absent du catalogue et nous le demande.
++ * L'équipe reçoit le produit recherché, qui le demande et où le joindre, pour revenir vers lui.
++ */
++export function buildProductRequestPayload(product: string, account: Account, country: string) {
++  return {
++    version: PAYLOAD_VERSION,
++    type: 'produit_introuvable',
++    createdAt: new Date().toISOString(),
++    product,
++    customer: {
++      accountId: account.id,
++      name: account.name,
++      type: account.type,
++      company: account.company,
++      email: account.email,
++      phone: account.phone,
++      whatsapp: account.whatsapp,
++    },
++    country,
++  };
++}
++
+ export type TransmitResult = 'sent' | 'not_connected' | 'failed';
+ 
+ export async function transmit(payload: unknown): Promise<TransmitResult> {
+@@ -65,3 +89,128 @@ export async function transmit(payload: unknown): Promise<TransmitResult> {
+     return 'failed';
+   }
+ }
++
++/** Ce qu'il faut savoir d'un produit pour décrire une ligne de commande à l'équipe. */
++export type LineInfo = { name: string; unit: 'kg' | 'unit'; noun: [string, string] };
++
++/**
++ * Commande d'un particulier, envoyée à la tour de contrôle. Le paiement n'y est pas affirmé :
++ * c'est l'équipe qui le constate et confirme la commande.
++ */
++export function buildOrderPayload(
++  order: Order,
++  account: Account | undefined,
++  describe: (lineId: string) => LineInfo | null,
++) {
++  return {
++    version: PAYLOAD_VERSION,
++    type: 'commande',
++    reference: order.number,
++    createdAt: new Date(order.createdAt).toISOString(),
++    currency: 'EUR',
++    lines: order.lines.map((l) => {
++      const p = describe(l.id);
++      return {
++        productId: l.id,
++        product: p?.name ?? l.id,
++        quantity: l.qty,
++        unit: p?.unit ?? 'unit',
++        unitNoun: p && p.unit !== 'kg' ? p.noun : null,
++        unitPrice: l.price,
++      };
++    }),
++    transportCost: order.transportCost,
++    payment: order.payment,
++    note: order.note,
++    address: order.address,
++    country: countryName(order.country),
++    // Position du téléphone à la confirmation, si le client l'a autorisée (livraison au Sénégal).
++    location: order.location ?? null,
++    customer: {
++      accountId: account?.id ?? null,
++      name: order.recipient || account?.name || '',
++      email: order.email,
++      phone: order.phone,
++    },
++  };
++}
++
++/** État d'une commande ou d'une demande, tel que l'équipe l'a réglé dans la tour de contrôle. */
++export type Tracked = {
++  reference: string;
++  pro: boolean;
++  status: StatusId;
++  statusAt: number;
++  /** Demande professionnelle : étape en clair (« Contacté », « Contrat conclu »…). */
++  stageLabel?: string;
++  /** Message de l'équipe pour cet état. */
++  title: string;
++  message: string;
++  /** Vrai tant qu'une livraison à domicile est en cours : la position peut être rafraîchie. */
++  tracking: boolean;
++};
++
++/** Position du téléphone, rafraîchie pour une commande en cours de livraison. */
++export async function sendPosition(
++  accountId: string,
++  reference: string,
++  spot: { lat: number; lng: number; accuracy: number | null },
++) {
++  if (!TEAM_ENDPOINT) return;
++  try {
++    await fetch(TEAM_ENDPOINT, {
++      method: 'POST',
++      headers: { 'Content-Type': 'application/json' },
++      body: JSON.stringify({ action: 'position', compte: accountId, reference, ...spot }),
++    });
++  } catch {
++    // Réseau absent : la prochaine relève de position repartira.
++  }
++}
++
++const STATUSES: StatusId[] = [
++  'attente',
++  'confirmee',
++  'preparation',
++  'expediee',
++  'livree',
++  'annulee',
++];
++
++/**
++ * Suivi des commandes du compte. Renvoie `null` si la tour de contrôle n'est pas joignable :
++ * l'application garde alors les statuts qu'elle connaît.
++ */
++export async function fetchTracking(accountId: string): Promise<Tracked[] | null> {
++  if (!TEAM_ENDPOINT) return null;
++  try {
++    const response = await fetch(`${TEAM_ENDPOINT}?compte=${encodeURIComponent(accountId)}`, {
++      headers: { Accept: 'application/json' },
++    });
++    if (!response.ok) return null;
++    const raw = (await response.json()) as { orders?: unknown };
++    if (!Array.isArray(raw.orders)) return null;
++    return raw.orders
++      .map((item): Tracked | null => {
++        const o = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
++        const status = STATUSES.find((s) => s === o.status);
++        const at = typeof o.statusAt === 'string' ? Date.parse(o.statusAt) : NaN;
++        if (typeof o.reference !== 'string' || !status || !Number.isFinite(at)) return null;
++        const notes = Array.isArray(o.notifications) ? o.notifications : [];
++        const last = (notes[notes.length - 1] ?? {}) as Record<string, unknown>;
++        return {
++          reference: o.reference,
++          pro: o.type === 'demande_professionnelle',
++          status,
++          statusAt: at,
++          stageLabel: typeof o.stageLabel === 'string' ? o.stageLabel : undefined,
++          title: typeof last.title === 'string' ? last.title : '',
++          message: typeof last.message === 'string' ? last.message : '',
++          tracking: o.tracking === true,
++        };
++      })
++      .filter((t): t is Tracked => !!t);
++  } catch {
++    return null;
++  }
++}
+diff --git a/lib/videos.ts b/lib/videos.ts
+index ecffd96..91a7b36 100644
+--- a/lib/videos.ts
++++ b/lib/videos.ts
+@@ -1,7 +1,7 @@
+-import { VIDEOS_ENDPOINT } from './config';
++import { ENGAGEMENT_ENDPOINT, VIDEOS_ENDPOINT } from './config';
+ 
+ /**
+- * Vidéos publiées par l'équipe, visibles dans Favoris › Découvrir.
++ * Vidéos publiées par l'équipe, visibles dans Favoris › Publications.
+  * Seule l'équipe publie : il n'y a aucune fonction d'envoi côté utilisateur.
+  */
+ /**
+@@ -128,33 +128,32 @@ export async function fetchTeamVideos(): Promise<TeamVideo[] | null> {
+   }
+ }
+ 
+-type Sent = 'sent' | 'not_connected' | 'failed';
++/**
++ * Ce qu'un compte a fait dans l'espace « Publications », vidéos et photos confondues : ce qu'il a
++ * vu, ce qu'il aime, ses commentaires. C'est l'état complet, pas une suite d'événements : le
++ * renvoyer ne change rien, on peut donc réessayer sans risque après une coupure.
++ */
++export type Engagement = {
++  account: { id: string; name: string; type: 'particulier' | 'pro' };
++  views: string[];
++  likes: string[];
++  comments: { id: string; publicationId: string; text: string; at: number }[];
++};
+ 
+-/** Envoi d'un événement à l'outil de l'équipe. Sans adresse configurée, rien ne part. */
+-async function post(path: string, body: Record<string, unknown>): Promise<Sent> {
+-  if (!VIDEOS_ENDPOINT) return 'not_connected';
++/**
++ * Envoie l'activité du compte à la tour de contrôle, qui en tire les statistiques de l'équipe.
++ * Renvoie `false` si rien n'est parti (pas d'adresse, pas de réseau) : on réessaiera.
++ */
++export async function sendEngagement(engagement: Engagement): Promise<boolean> {
++  if (!ENGAGEMENT_ENDPOINT) return false;
+   try {
+-    const response = await fetch(`${VIDEOS_ENDPOINT}/${path}`, {
++    const response = await fetch(ENGAGEMENT_ENDPOINT, {
+       method: 'POST',
+       headers: { 'Content-Type': 'application/json' },
+-      body: JSON.stringify({ ...body, at: new Date().toISOString() }),
++      body: JSON.stringify(engagement),
+     });
+-    return response.ok ? 'sent' : 'failed';
++    return response.ok;
+   } catch {
+-    return 'failed';
++    return false;
+   }
+ }
+-
+-/**
+- * Vues, J'aime et commentaires. Rien de tout cela n'est connecté pour l'instant : ces appels
+- * répondent « not_connected » et les données restent sur l'appareil. Les commentaires devront
+- * passer par une modération côté équipe avant d'être visibles par d'autres.
+- */
+-export const reportView = (videoId: string, accountId: string | null) =>
+-  post('views', { videoId, accountId });
+-
+-export const reportLike = (videoId: string, liked: boolean, accountId: string | null) =>
+-  post('likes', { videoId, liked, accountId });
+-
+-export const reportComment = (videoId: string, text: string, accountId: string | null) =>
+-  post('comments', { videoId, text, accountId });
+diff --git a/screens/CheckoutScreen.tsx b/screens/CheckoutScreen.tsx
+index 21ad93c..d04e213 100644
+--- a/screens/CheckoutScreen.tsx
++++ b/screens/CheckoutScreen.tsx
+@@ -16,6 +16,8 @@ import { euro, formatAddress, round2 } from '../lib/format';
+ import { isPhone } from '../lib/identity';
+ import type { Nav } from '../lib/navigation';
+ import { useStore } from '../lib/store';
++import { useToast } from '../lib/toast';
++import { Spot, position } from '../lib/locate';
+ import { C, F, PAD, R } from '../lib/theme';
+ import { useFrame } from '../lib/useFrame';
+ import { success, tick, warn } from '../lib/haptics';
+@@ -74,6 +76,7 @@ function Option({
+ export function CheckoutScreen() {
+   const nav = useNavigation<Nav>();
+   const { account, cartLines, subtotal, address, contact, placeOrder, setTab } = useStore();
++  const toast = useToast();
+   const { top, bottom } = useFrame();
+   const [transport, setTransport] = useState(true);
+   const [paymentId, setPaymentId] = useState<string>(PAYMENTS[0].id);
+@@ -127,21 +130,36 @@ export function CheckoutScreen() {
+       return;
+     }
+     const payment = PAYMENTS.find((p) => p.id === paymentId) ?? PAYMENTS[0];
++    const home = transport && address?.country === 'SN';
+     sending.current = true;
+     setBusy(true);
+     // Aucun prestataire de paiement n'est branché : cette courte attente tient lieu de réponse.
+     // L'écran de réussite ne s'ouvre qu'une fois la commande réellement enregistrée.
+-    setTimeout(() => {
+-      if (!alive.current) return;
+-      const order = placeOrder({
+-        transport,
+-        payment: payment.title,
+-        note: note.trim(),
+-        contact: { email: mail, phone: tel },
+-      });
+-      success();
+-      nav.replace('Success', { orderId: order.id });
+-    }, 600);
++    const finish = (spot: Spot | null) =>
++      setTimeout(() => {
++        if (!alive.current) return;
++        const order = placeOrder({
++          transport,
++          payment: payment.title,
++          note: note.trim(),
++          contact: { email: mail, phone: tel },
++          location: spot,
++        });
++        success();
++        nav.replace('Success', { orderId: order.id });
++        if (home) {
++          toast(
++            spot
++              ? 'Panier confirmé. Notre livreur vous l’apportera à l’endroit indiqué par votre téléphone.'
++              : 'Localisation non partagée : notre livreur se fiera à votre adresse et vous appellera.',
++            spot ? { icon: 'location', tint: C.leaf } : { icon: 'call', tint: C.star },
++          );
++        }
++      }, 600);
++    // Au Sénégal, la livraison se fait à domicile : le téléphone demande la localisation, pour
++    // que notre livreur se rende directement chez le client.
++    if (home) position(true).then(finish);
++    else finish(null);
+   };
+ 
+   const header = (
+diff --git a/screens/CreditsScreen.tsx b/screens/CreditsScreen.tsx
+index 9105904..e28a985 100644
+--- a/screens/CreditsScreen.tsx
++++ b/screens/CreditsScreen.tsx
+@@ -39,7 +39,7 @@ export function CreditsScreen() {
+             pour l’application ; chacune reste sous sa licence d’origine. Touchez une ligne pour
+             ouvrir la page source. Polices : Fraunces et Manrope (SIL Open Font License). Contours
+             des pays, pour la détection par position : Natural Earth (domaine public). Vidéos de
+-            démonstration de la rubrique Découvrir : montées à partir de ces mêmes photos.
++            démonstration de la rubrique Publications : montées à partir de ces mêmes photos.
+           </Text>
+         }
+         renderItem={({ item }) => {
+diff --git a/screens/FavoritesScreen.tsx b/screens/FavoritesScreen.tsx
+index 1d747a3..9cacfc7 100644
+--- a/screens/FavoritesScreen.tsx
++++ b/screens/FavoritesScreen.tsx
+@@ -5,6 +5,7 @@ import { useIsFocused, useNavigation } from '@react-navigation/native';
+ import { LinearGradient } from 'expo-linear-gradient';
+ import { EmptyState } from '../components/EmptyState';
+ import { PAGE_SCROLL } from '../components/PageSwipe';
++import { PhotoPosts } from '../components/PhotoPosts';
+ import { ProductCard } from '../components/ProductCard';
+ import { Reels } from '../components/Reels';
+ import { TAB_BAR_SPACE } from '../components/TabBar';
+@@ -22,16 +23,29 @@ const GAP = 12;
+ type View_ = 'favoris' | 'decouvrir';
+ const VIEWS: { id: View_; label: string }[] = [
+   { id: 'favoris', label: 'Mes favoris' },
+-  { id: 'decouvrir', label: 'Découvrir' },
++  { id: 'decouvrir', label: 'Publications' },
+ ];
+ 
+ export function FavoritesScreen() {
+   const nav = useNavigation<Nav>();
+-  const { favorites, cart, byId, isPro, tab, newVideoCount, toggleFavorite, addStep, setTab } =
+-    useStore();
++  const {
++    favorites,
++    cart,
++    byId,
++    isPro,
++    tab,
++    newVideoCount,
++    posts,
++    toggleFavorite,
++    addStep,
++    setTab,
++  } = useStore();
+   const focused = useIsFocused();
+-  // Deux espaces dans l'onglet : les produits gardés, et les vidéos de l'équipe.
++  // Deux espaces dans l'onglet : les produits gardés, et les publications de l'équipe.
+   const [view, setView] = useState<View_>('favoris');
++  // Dans Publications : les vidéos, ou les publications photo de l'équipe quand il y en a.
++  const [kind, setKind] = useState<'videos' | 'photos'>('videos');
++  const showPhotos = kind === 'photos' && posts.length > 0;
+   const toast = useToast();
+   const { width, top, bottom } = useFrame();
+   const cardW = Math.floor((width - PAD * 2 - GAP) / 2);
+@@ -118,17 +132,65 @@ export function FavoritesScreen() {
+     </View>
+   );
+ 
+-  // Découvrir : les vidéos de l'équipe, directement, en plein écran. Les deux boutons restent
++  // Publications : les vidéos et les photos de l'équipe, et rien d'autre — on regarde, on aime,
++  // on commente ; rien n'y mène à un produit. Les vidéos s'ouvrent directement, en plein écran. Les deux boutons restent
+   // en haut pour revenir aux favoris, et la barre de navigation reste utilisable en bas.
+   if (view === 'decouvrir') {
++    // Le choix « Vidéos / Photos » n'apparaît que si l'équipe a publié des photos.
++    const kinds = posts.length > 0 && (
++      <View style={styles.kinds}>
++        {(['videos', 'photos'] as const).map((k) => {
++          const on = (showPhotos ? 'photos' : 'videos') === k;
++          return (
++            <Pressable
++              key={k}
++              onPress={() => {
++                if (on) return;
++                tick();
++                setKind(k);
++              }}
++              accessibilityRole="button"
++              accessibilityState={{ selected: on }}
++              aria-pressed={on}
++              accessibilityLabel={
++                k === 'videos'
++                  ? 'Vidéos'
++                  : `Photos, ${posts.length} publication${posts.length > 1 ? 's' : ''}`
++              }
++              style={({ pressed }) => [
++                styles.kind,
++                on && styles.kindOn,
++                pressed && { opacity: 0.7 },
++              ]}
++            >
++              <Text style={[styles.kindText, on && styles.kindTextOn]}>
++                {k === 'videos' ? 'Vidéos' : 'Photos'}
++              </Text>
++            </Pressable>
++          );
++        })}
++      </View>
++    );
++    const offset = posts.length > 0 ? 54 : 0;
+     return (
+-      <View style={styles.reels}>
+-        <Reels active={tab === 'favorites' && focused} top={top + 66} />
++      <View style={[styles.reels, showPhotos && { backgroundColor: C.bg }]}>
++        {showPhotos ? (
++          <PhotoPosts top={top + 78 + offset} />
++        ) : (
++          <Reels active={tab === 'favorites' && focused} top={top + 66 + offset} />
++        )}
+         <LinearGradient
+-          colors={['rgba(0,0,0,0.72)', 'rgba(0,0,0,0)']}
+-          style={[styles.reelsShade, { height: top + 96 }]}
++          colors={
++            showPhotos
++              ? [C.bg, 'rgba(11,14,9,0.94)', 'rgba(11,14,9,0)']
++              : ['rgba(0,0,0,0.72)', 'rgba(0,0,0,0)']
++          }
++          style={[styles.reelsShade, { height: top + 96 + offset }]}
+         />
+-        <View style={[styles.reelsTop, { top: top + 8 }]}>{segments}</View>
++        <View style={[styles.reelsTop, { top: top + 8 }]}>
++          {segments}
++          {kinds}
++        </View>
+       </View>
+     );
+   }
+@@ -193,6 +255,21 @@ const styles = StyleSheet.create({
+   reels: { flex: 1, backgroundColor: '#000000' },
+   reelsShade: { position: 'absolute', top: 0, left: 0, right: 0, pointerEvents: 'none' },
+   reelsTop: { position: 'absolute', left: PAD, right: PAD },
++  kinds: { flexDirection: 'row', justifyContent: 'center', gap: 8, marginTop: 8 },
++  kind: {
++    minWidth: 104,
++    height: 44,
++    alignItems: 'center',
++    justifyContent: 'center',
++    paddingHorizontal: 18,
++    borderRadius: R.pill,
++    backgroundColor: 'rgba(27,31,22,0.92)',
++    borderWidth: 1,
++    borderColor: C.line,
++  },
++  kindOn: { borderColor: C.leaf, backgroundColor: 'rgba(40,52,22,0.96)' },
++  kindText: { color: C.textDim, fontFamily: F.bold, fontSize: 13.5 },
++  kindTextOn: { color: C.leaf, fontFamily: F.heavy },
+   segments: {
+     flexDirection: 'row',
+     padding: 4,
+diff --git a/screens/HomeScreen.tsx b/screens/HomeScreen.tsx
+index 1a7eec9..64a0696 100644
+--- a/screens/HomeScreen.tsx
++++ b/screens/HomeScreen.tsx
+@@ -9,9 +9,10 @@ import Ionicons from '@expo/vector-icons/Ionicons';
+ import { BrandLogo } from '../components/BrandLogo';
+ import { RoundButton } from '../components/Buttons';
+ import { EmptyState } from '../components/EmptyState';
++import { MissingProduct } from '../components/MissingProduct';
+ import { Glow } from '../components/Glow';
+ import { DesktopHero } from '../components/DesktopHero';
+-import { HomeHero } from '../components/HomeHero';
++import { HomeHero, buildSlides } from '../components/HomeHero';
+ import { INCOTERM_SHORT, IncotermToggle } from '../components/IncotermToggle';
+ import { KeepsOwnSwipes, PAGE_SCROLL } from '../components/PageSwipe';
+ import { PressableScale } from '../components/PressableScale';
+@@ -112,7 +113,12 @@ export function HomeScreen() {
+     rules,
+     usesModes,
+     setTab,
++    shelves,
++    homeFilters,
++    baseById,
++    campaigns,
+   } = useStore();
++  const hasHero = useMemo(() => buildSlides(campaigns, baseById).length > 0, [campaigns, baseById]);
+   const toast = useToast();
+   const { width, top, bottom, desktop, page } = useFrame();
+   const [filter, setFilter] = useState<FilterId>('tout');
+@@ -145,9 +151,34 @@ export function HomeScreen() {
+     [catalog],
+   );
+   // Seuls les rayons qui ont des produits dans cet espace sont proposés.
++  // Rayons de la tour de contrôle (nom, ordre) ; à défaut, ceux d'origine de l'application.
++  const allFilters = useMemo<{ id: FilterId; label: string }[]>(
++    () =>
++      shelves.length === 0
++        ? FILTERS
++        : [
++            { id: 'tout', label: homeFilters.tout.label },
++            { id: 'saison', label: homeFilters.saison.label },
++            ...shelves.map((x) => ({ id: x.id, label: x.label })),
++          ],
++    [shelves, homeFilters],
++  );
++  // Image d'un rond : celle publiée par l'équipe, sinon la photo du produit choisi, sinon l'image
++  // d'origine. Une image publiée n'a pas de proportions connues : elle est ajustée dans un carré.
++  const filterPhoto = useCallback(
++    (id: FilterId): { source: Photo; ratio: number } => {
++      const shelf = shelves.find((x) => x.id === id);
++      const url = id === 'tout' || id === 'saison' ? homeFilters[id].photoUrl : shelf?.photoUrl;
++      if (url) return { source: { uri: url }, ratio: 1 };
++      const product = shelf?.photoProduct ? baseById[shelf.photoProduct] : undefined;
++      if (product) return { source: product.image, ratio: RATIO[product.id] ?? 1 };
++      return FILTER_PHOTO[id] ?? FILTER_PHOTO.tout;
++    },
++    [shelves, homeFilters, baseById],
++  );
+   const filters = useMemo(
+     () =>
+-      FILTERS.filter(
++      allFilters.filter(
+         (f) =>
+           f.id === 'tout' ||
+           (f.id === 'saison'
+@@ -155,7 +186,7 @@ export function HomeScreen() {
+             : // Pas de familles de produits dans l'espace professionnel.
+               !isPro && catalog.some((p) => p.category === f.id)),
+       ),
+-    [catalog, isPro],
++    [allFilters, catalog, isPro],
+   );
+ 
+   const list = useMemo(() => {
+@@ -167,6 +198,12 @@ export function HomeScreen() {
+       return normalize(`${p.name} ${p.variety} ${p.origin}`).includes(q);
+     });
+   }, [stall, filter, query]);
++  // Introuvable partout, et pas seulement dans le rayon ouvert : c'est alors un produit que nous
++  // n'avons pas, et l'on propose au client de nous le demander.
++  const nowhere = useMemo(() => {
++    const q = normalize(query);
++    return !!q && !stall.some((p) => normalize(`${p.name} ${p.variety} ${p.origin}`).includes(q));
++  }, [stall, query]);
+ 
+   const seasonal = useMemo(() => catalog.filter((p) => isInSeason(p) && !isAllYear(p)), [catalog]);
+ 
+@@ -203,7 +240,7 @@ export function HomeScreen() {
+     [addStep, byId, open, isPro, toast, setTab],
+   );
+ 
+-  const activeFilter = FILTERS.find((f) => f.id === filter)!;
++  const activeFilter = allFilters.find((f) => f.id === filter) ?? allFilters[0];
+   const sectionTitle = searching
+     ? 'Résultats'
+     : filter === 'tout'
+@@ -255,7 +292,8 @@ export function HomeScreen() {
+     <View>
+       {desktop ? (
+         // Ordinateur : la marque, le panier et le compte sont dans la barre du haut.
+-        !searching && (
++        !searching &&
++        hasHero && (
+           <View style={[styles.hero, { marginTop: 26 }]}>
+             <DesktopHero width={width - PAD * 2} onOpen={open} />
+           </View>
+@@ -277,7 +315,7 @@ export function HomeScreen() {
+           </View>
+ 
+           {/* Pendant une recherche, la bannière s'efface pour laisser les résultats sous la barre. */}
+-          {!searching && (
++          {!searching && hasHero && (
+             <KeepsOwnSwipes style={styles.hero}>
+               <HomeHero width={width - PAD * 2} onOpen={open} />
+             </KeepsOwnSwipes>
+@@ -321,8 +359,8 @@ export function HomeScreen() {
+               >
+                 <View style={[styles.filterIcon, on && styles.filterIconOn]}>
+                   <Image
+-                    source={FILTER_PHOTO[f.id].source}
+-                    style={photoSize(FILTER_PHOTO[f.id].ratio)}
++                    source={filterPhoto(f.id).source}
++                    style={photoSize(filterPhoto(f.id).ratio)}
+                     contentFit="contain"
+                     accessible={false}
+                   />
+@@ -402,9 +440,11 @@ export function HomeScreen() {
+             <EmptyState
+               title="Rien à ce nom-là"
+               body={
+-                searching
+-                  ? `Aucun produit ne correspond à « ${query.trim()} » dans ce rayon. Essayez un autre mot ou parcourez tout l’étal.`
+-                  : 'Ce rayon est vide pour le moment.'
++                nowhere
++                  ? `Aucun produit ne correspond à « ${query.trim()} » dans notre catalogue.`
++                  : searching
++                    ? `Aucun produit ne correspond à « ${query.trim()} » dans ce rayon. Essayez un autre mot ou parcourez tout l’étal.`
++                    : 'Ce rayon est vide pour le moment.'
+               }
+               cta="Voir tout l’étal"
+               onPress={() => {
+@@ -412,6 +452,7 @@ export function HomeScreen() {
+                 setFilter('tout');
+               }}
+             />
++            {nowhere && <MissingProduct query={query.trim()} />}
+           </View>
+         }
+       />
+diff --git a/screens/ProductScreen.tsx b/screens/ProductScreen.tsx
+index bfbb966..392d127 100644
+--- a/screens/ProductScreen.tsx
++++ b/screens/ProductScreen.tsx
+@@ -36,7 +36,7 @@ import { PressableScale } from '../components/PressableScale';
+ import { SeasonStrip } from '../components/SeasonStrip';
+ import { Stepper } from '../components/Stepper';
+ import { useFlight } from '../lib/flight';
+-import { CATEGORY_LABEL, Product } from '../lib/data';
++import { Product } from '../lib/data';
+ import {
+   MONTHS,
+   addedMessage,
+@@ -165,6 +165,7 @@ export function ProductScreen() {
+     cartCount,
+     catalog,
+     byId,
++    shelfLabel,
+     isPro,
+     incoterm,
+     setIncoterm,
+@@ -673,7 +674,7 @@ export function ProductScreen() {
+                   )
+                 ) : (
+                   <View style={styles.chip}>
+-                    <Text style={styles.chipText}>{CATEGORY_LABEL[p.category]}</Text>
++                    <Text style={styles.chipText}>{shelfLabel(p.category)}</Text>
+                   </View>
+                 )}
+               </Animated.View>
