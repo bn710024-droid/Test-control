@@ -83,12 +83,13 @@ function SeasonCard({ product: p }: { product: Product }) {
 
 /** Ce que l'application d'achat garde sur l'appareil du client : aucune donnée n'arrive ici. */
 const NOT_CONNECTED = [
-  { title: 'Commandes des particuliers', why: 'Gardées sur le téléphone du client : leur envoi vers l’espace commandes reste à développer dans l’application.' },
-  { title: 'Demandes professionnelles', why: 'Prêtes à partir vers l’espace commandes : il reste à renseigner TEAM_ENDPOINT dans l’application.' },
+  { title: 'Paiements', why: 'Aucun prestataire n’est branché : l’équipe pointe ici le paiement reçu.' },
+  { title: 'Moyens de paiement', why: 'Liste fixe (Orange Money, Wave, virement, carte) écrite dans la tour : pas encore réglable ici.' },
   { title: 'Comptes clients', why: 'Créés et conservés sur chaque appareil, sans serveur.' },
-  { title: 'Paiements', why: 'Parcours de démonstration : aucun prestataire n’est branché.' },
-  { title: 'Avis et notes', why: 'Aucun système d’avis : les notes affichées sont des exemples.' },
-  { title: 'Vidéos de l’équipe', why: 'Vidéos de démonstration embarquées : VIDEOS_ENDPOINT vaut null.' },
+  { title: 'Messages de suivi', why: 'Envoyés à l’application à chaque statut, pas encore affichés au client.' },
+  { title: 'Étapes des demandes professionnelles', why: 'Le client voit « En attente de réponse » jusqu’au contrat, pas « Contacté » ni « En discussion ».' },
+  { title: 'Publications photo', why: 'Publiées ici, pas encore affichées par l’application.' },
+  { title: 'Avis et notes', why: 'Aucun système d’avis : les notes affichées sont des exemples.' },
 ];
 
 export default function Dashboard() {
@@ -350,8 +351,8 @@ export default function Dashboard() {
             <SectionHead title="Hors de cette administration" />
             <div className="card mx-5 mt-3.5 p-4">
               <p className="text-[13.5px] leading-5 text-fg-dim">
-                L’application d’achat n’envoie encore aucune donnée à un serveur. L’espace commandes est prêt à les recevoir ; tant
-                qu’elle n’est pas reliée, il ne peut montrer que des exemples, signalés comme tels.
+                Reliée (variable EXPO_PUBLIC_CONTROL_TOWER_URL), l’application d’achat lit le catalogue publié ici et envoie à
+                l’espace commandes ses commandes, demandes professionnelles, produits introuvables et réactions aux vidéos.
               </p>
               <button
                 type="button"
