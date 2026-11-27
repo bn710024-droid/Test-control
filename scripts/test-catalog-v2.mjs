@@ -106,7 +106,9 @@ test('format : prix null conservé (« à compléter »), kg → grammes, max ab
   assert.equal(c.grams, 4000);
   assert.equal(c.unitLabel.replace(/\s/g, ' '), 'par carton de 4 kg');
   assert.equal('max' in c, false);
-  assert.equal('photo' in c, false);
+  // Sans photo envoyée : la photo embarquée dans l'application est désignée.
+  assert.deepEqual(c.photo, { asset: 'format:mangue:carton' });
+  assert.deepEqual(c.preview, { asset: 'preview:mangue:carton' });
   assert.deepEqual([c.step, c.min], [2, 2]);
 });
 test('réglages par pays : prix propre avec devise, prix d’origine SANS clé price, indisponible', () => {

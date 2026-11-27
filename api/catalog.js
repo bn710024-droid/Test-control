@@ -5,6 +5,7 @@ import { requestMessageOf } from '../shared/requests.js';
 import { annonceState } from '../shared/orders.js';
 import { toAppDocument } from '../shared/catalog-v2.js';
 import { publishedPayments } from '../shared/payments.js';
+import { transportZonesOf } from '../shared/transport.js';
 
 /**
  * Catalogue publié — lecture publique, sans authentification.
@@ -25,7 +26,7 @@ export default async function handler(req, res) {
     const [products, categories, settings, seals] = await Promise.all([
       supabase.from('products').select('*').eq('archived', false).order('sort_order', { ascending: true }),
       supabase.from('categories').select('*').order('sort_order', { ascending: true }),
-      supabase.from('settings').select('*').in('key', ['rules', AUDIENCE_KEY, 'filters', 'missing', 'gp', 'payments']),
+      supabase.from('settings').select('*').in('key', ['rules', AUDIENCE_KEY, 'filters', 'missing', 'gp', 'payments', 'transport']),
       loadSeals(),
     ]);
     const annonces = await supabase.from('publications').select('*').eq('kind', 'annonce').eq('published', true).order('sort_order', { ascending: true });
@@ -127,6 +128,12 @@ export default async function handler(req, res) {
     const paymentsRow = settings.data.find((r) => r.key === 'payments') ?? null;
     const paymentsOk = !!paymentsRow && stateOf('settings', paymentsRow, seals) === 'ok';
     doc.payments = publishedPayments(paymentsOk ? paymentsRow.value : null);
+    // Forfait transport des particuliers par zone (Réglages › Transport), en euros. Publié seulement
+    // une fois réglé et validé : sans lui, l'application garde son barème.
+    const transportRow = settings.data.find((r) => r.key === 'transport') ?? null;
+    if (transportRow && stateOf('settings', transportRow, seals) === 'ok') {
+      doc.transport = { currency: 'EUR', zones: transportZonesOf(transportRow.value).map(({ id, label, fee }) => ({ id, label, fee })) };
+    }
     // Cache court : une annonce activée, désactivée ou arrivée à son terme se voit en quelques secondes.
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');
     if (String(req.query?.v ?? '') === '2') {

@@ -67,8 +67,12 @@ function settingOf(rule) {
   return out;
 }
 
-/** Emballage de la tour → format de l'application (`CatalogFormat`). */
-export function formatOf(pack) {
+/**
+ * Emballage de la tour → format de l'application (`CatalogFormat`). Sans photo envoyée, la photo
+ * embarquée dans l'application (`format:<produit>:<emballage>`, et son aperçu `preview:…`) est
+ * désignée : l'application l'affiche si elle la connaît, sinon rien n'est montré.
+ */
+export function formatOf(pack, productId) {
   const range = packRange(pack);
   const settings = (Array.isArray(pack.countryRules) ? pack.countryRules : [])
     .filter((r) => Array.isArray(r?.countries) && r.countries.length > 0)
@@ -91,7 +95,11 @@ export function formatOf(pack) {
     min: range.min,
     ...(range.max !== null ? { max: range.max } : null),
     available: pack.available !== false,
-    ...(pack.photo_url ? { photo: { url: pack.photo_url } } : null),
+    ...(pack.photo_url
+      ? { photo: { url: pack.photo_url } }
+      : productId
+        ? { photo: { asset: `format:${productId}:${pack.id}` }, preview: { asset: `preview:${productId}:${pack.id}` } }
+        : null),
     visibility: { mode: 'monde', countries: [] },
     ...(settings.length > 0 ? { settings } : null),
   };
@@ -105,7 +113,7 @@ export function productOf(p, demoIds) {
     visibility: visibilityOfZone(countries),
     demo: demoIds.has(p.id),
     // Les emballages réservés aux professionnels ne sont pas des formats particuliers.
-    formats: (Array.isArray(packagings) ? packagings : []).filter((k) => k.audience !== 'pros').map(formatOf),
+    formats: (Array.isArray(packagings) ? packagings : []).filter((k) => k.audience !== 'pros').map((k) => formatOf(k, p.id)),
   };
 }
 
@@ -173,5 +181,6 @@ export function toAppDocument(v1, { demoIds = new Set(), gp = [] } = {}) {
     filters: filtersOf(v1.filters),
     payments: (v1.payments ?? []).map((p) => ({ ...p, enabled: true })),
     productRequest: v1.productRequest ?? null,
+    ...(v1.transport ? { transport: v1.transport } : null),
   };
 }

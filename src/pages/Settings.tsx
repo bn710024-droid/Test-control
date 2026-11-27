@@ -23,6 +23,7 @@ import { ago, initials, kgText, numStr, parseNum, plural } from '../lib/format';
 import { cx } from '../lib/ui';
 import { DEFAULT_RULES, parseCatalog, validateRules, type Errors, type QuantityRules } from '../../shared/catalog.js';
 import { PAYMENT_METHODS, paymentStates } from '../../shared/payments.js';
+import { TRANSPORT_ZONES, transportZonesOf, validateTransport, type TransportZone } from '../../shared/transport.js';
 
 type Member = { user_id: string; email: string; provider: string; role: 'owner' | 'editor' | 'pending'; since: string | null };
 type Credit = { id: string; title: string; artist: string; license: string; url: string };
@@ -88,7 +89,7 @@ type Report =
 export default function Settings() {
   const { user, access, isOwner, canEdit, signOut } = useAuth();
   const navigate = useNavigate();
-  const { products, settings, loading, error, reload, pendingRefs, saveRules, saveLink, savePayments, sealRefs } = useData();
+  const { products, settings, loading, error, reload, pendingRefs, saveRules, saveLink, savePayments, saveTransport, sealRefs } = useData();
   const toast = useToast();
   const [params] = useSearchParams();
   const provider = access.status === 'ready' ? access.provider : 'email';
@@ -148,6 +149,38 @@ export default function Settings() {
       className="pr-[46px]"
     />
   );
+
+  // ───── Forfait transport des particuliers (en euros, par zone de destination)
+  const feesToForm = (zones: TransportZone[]) => Object.fromEntries(zones.map((z) => [z.id, numStr(z.fee)]));
+  const storedFees = transportZonesOf(settings?.transport);
+  const feesKey = JSON.stringify(storedFees);
+  const [fees, setFees] = useState<Record<string, string>>(() => feesToForm(storedFees));
+  const [feeErrors, setFeeErrors] = useState<Errors>({});
+  const [savingFees, setSavingFees] = useState(false);
+  useEffect(() => {
+    setFees(feesToForm(JSON.parse(feesKey)));
+  }, [feesKey]);
+  const feesDirty = JSON.stringify(fees) !== JSON.stringify(feesToForm(storedFees));
+
+  const submitFees = async () => {
+    const asked = Object.fromEntries(TRANSPORT_ZONES.map((z) => [z.id, parseNum(fees[z.id] ?? '')]));
+    const { errors, value } = validateTransport(asked);
+    setFeeErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      toast(`${plural(Object.keys(errors).length, 'valeur à corriger', 'valeurs à corriger')}`, { tone: 'error' });
+      return;
+    }
+    setSavingFees(true);
+    try {
+      await saveTransport(value);
+      toast('Forfaits de transport enregistrés');
+    } catch (err) {
+      if (err instanceof ApiError && err.fields) setFeeErrors(err.fields);
+      toast(`Non enregistré. ${messageOf(err)}`, { tone: 'error' });
+    } finally {
+      setSavingFees(false);
+    }
+  };
 
   // ───── Publication
   // Adresse lue par l'application (format de l'application, schema 2). Sans `?v=2` : format historique.
@@ -529,6 +562,41 @@ export default function Settings() {
                   </div>
                 );
               })}
+            </Block>
+
+            {/* ───── Transport des particuliers */}
+            <Block id="transport" title="Transport des particuliers">
+              <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
+                Forfait ajouté à une commande « avec transport », selon le pays de livraison, au départ du Sénégal. Montants en euros,
+                publiés dans le catalogue.{!settings?.transport && ' Barème d’exemple tant qu’il n’a pas été enregistré : remplacez-le par vos tarifs.'}
+                {!isOwner && ' Seul un responsable peut les modifier.'}
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-2.5">
+                {TRANSPORT_ZONES.map((z) => (
+                  <Field
+                    key={z.id}
+                    label={z.label}
+                    compact
+                    inputMode="decimal"
+                    suffix="€"
+                    disabled={!isOwner}
+                    value={fees[z.id] ?? ''}
+                    onValue={(v) => {
+                      setFees((f) => ({ ...f, [z.id]: v }));
+                      setFeeErrors((e) => (e[z.id] ? { ...e, [z.id]: '' } : e));
+                    }}
+                    error={feeErrors[z.id] || undefined}
+                    className="pr-[46px]"
+                  />
+                ))}
+              </div>
+              {isOwner && (
+                <div className="mt-5 flex flex-wrap items-center gap-2.5">
+                  <PrimaryButton className="!w-auto min-w-[200px] flex-1" label="Enregistrer les forfaits" disabled={!feesDirty && !!settings?.transport} loading={savingFees} onClick={submitFees} />
+                  {feesDirty && <GhostButton label="Annuler" onClick={() => { setFees(feesToForm(storedFees)); setFeeErrors({}); }} />}
+                </div>
+              )}
+              {feesDirty && <p className="mt-2.5 text-center text-[12.5px] font-semibold text-star" role="status">Modifications non enregistrées</p>}
             </Block>
 
             {/* ───── Règles de quantité */}

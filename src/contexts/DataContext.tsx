@@ -33,6 +33,8 @@ export type Settings = {
   missing: RequestMessage | null;
   /** Moyens de paiement activés (`{ orange_money: true, … }`). `null` : jamais réglé, tous activés. */
   payments: Record<string, boolean> | null;
+  /** Forfaits de transport par zone, en euros (`{ sn: 6, … }`). `null` : jamais réglés. */
+  transport: Record<string, number> | null;
   updated: Record<string, string>;
   seals: Record<string, Seal>;
 };
@@ -82,6 +84,7 @@ type DataValue = {
   saveRules: (rules: unknown) => Promise<void>;
   saveLink: (link: { appLinked: boolean; note: string }) => Promise<void>;
   savePayments: (payments: Record<string, boolean>) => Promise<void>;
+  saveTransport: (fees: Record<string, number>) => Promise<void>;
   saveFilters: (filters: Record<HomeFilterId, HomeFilter>) => Promise<void>;
   saveRequestMessage: (message: RequestMessage) => Promise<void>;
   sealRefs: (refs: string[]) => Promise<{ sealed: string[]; refused: { ref: string; error: string }[] }>;
@@ -323,6 +326,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     savePayments: async (payments) => {
       guard();
       await api('/api/settings', { method: 'PUT', body: { key: 'payments', value: payments } });
+      await refresh();
+    },
+    saveTransport: async (fees) => {
+      guard();
+      await api('/api/settings', { method: 'PUT', body: { key: 'transport', value: fees } });
       await refresh();
     },
     sealRefs: async (refs) => {
