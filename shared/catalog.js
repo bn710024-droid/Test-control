@@ -608,13 +608,20 @@ export function packContent(p) {
   return hasQty(p) ? packTotal(p, 1) : '';
 }
 
-/** Contenu de `count` emballages : « 8 kg », « 1,5 kg », « 12 pièces » — vide si la contenance manque. */
+/** Poids en grammes : ≥ 1 000 g → « 5 kg », « 1,5 kg » (une décimale au plus) ; sinon « 500 g ». */
+function gramsText(grams) {
+  const g = Math.round(grams);
+  if (g < 1000) return `${g} g`;
+  const [whole, tenth] = String(Math.round(g / 100) / 10).split('.');
+  return `${group(whole)}${tenth ? `,${tenth}` : ''} kg`;
+}
+
+/** Contenu de `count` emballages : « 8 kg », « 1,5 kg », « 500 g », « 12 pièces » — vide si la contenance manque. */
 export function packTotal(p, count) {
   if (!hasQty(p) || !Number.isFinite(count)) return '';
   const total = Number(p.qty) * count;
   if (p.unit === 'piece') return `${num3(total)} ${total > 1 ? 'pièces' : 'pièce'}`;
-  if (p.unit === 'g') return total >= 1000 ? `${num3(total / 1000)} kg` : `${num3(total)} g`;
-  return `${num3(total)} kg`;
+  return gramsText(p.unit === 'g' ? total : total * 1000);
 }
 
 /** Prix ramené au contenu : « 3,25 € le kg », « 0,50 € la pièce » — vide si prix ou contenance manquent. */
