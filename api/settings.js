@@ -1,6 +1,6 @@
 import supabase from './db-client.js';
 import { preflight, requireAdmin, readBody, log, serverError } from './_lib.js';
-import { loadSeals, stateOf, sealRows, SEALED_TABLES, keyColumn } from './_seal.js';
+import { loadSeals, stateOf, sealRows, unseal, SEALED_TABLES, keyColumn } from './_seal.js';
 import { validateRules, validateProduct, validateCategory, DEFAULT_RULES } from '../shared/catalog.js';
 import { validateRequestMessage } from '../shared/requests.js';
 import { validatePayments } from '../shared/payments.js';
@@ -110,6 +110,14 @@ export default async function handler(req, res) {
       }
 
       if (key === 'transport') {
+        // `null` : forfaits retirés, l'application reprend son barème d'exemple.
+        if (value === null) {
+          const { error } = await supabase.from('settings').delete().eq('key', 'transport');
+          if (error) throw error;
+          await unseal('settings', 'transport');
+          await log(admin, 'update', 'settings', 'transport', 'Forfaits de transport retirés : barème de l’application');
+          return res.status(200).json({ key, value: null });
+        }
         const { errors, value: fees } = validateTransport(value);
         if (Object.keys(errors).length > 0) {
           return res.status(400).json({ error: Object.values(errors)[0], fields: errors });
