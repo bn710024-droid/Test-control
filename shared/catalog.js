@@ -608,12 +608,12 @@ export function packContent(p) {
   return hasQty(p) ? packTotal(p, 1) : '';
 }
 
-/** Poids en grammes : ≥ 1 000 g → « 5 kg », « 1,5 kg » (une décimale au plus) ; sinon « 500 g ». */
+/** Poids en grammes : ≥ 1 000 g → « 5 kg », « 1,5 kg », « 1,25 kg » (deux décimales au plus, zéros inutiles retirés) ; sinon « 500 g ». */
 function gramsText(grams) {
   const g = Math.round(grams);
   if (g < 1000) return `${g} g`;
-  const [whole, tenth] = String(Math.round(g / 100) / 10).split('.');
-  return `${group(whole)}${tenth ? `,${tenth}` : ''} kg`;
+  const [whole, decimals] = String(Math.round(g / 10) / 100).split('.');
+  return `${group(whole)}${decimals ? `,${decimals}` : ''} kg`;
 }
 
 /** Contenu de `count` emballages : « 8 kg », « 1,5 kg », « 500 g », « 12 pièces » — vide si la contenance manque. */

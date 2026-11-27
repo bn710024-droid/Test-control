@@ -1,6 +1,6 @@
 /**
- * Format des contenus d'emballage dans la tour et dans `?v=2` : ≥ 1 000 g → « X kg » (une
- * décimale au plus, virgule), < 1 000 g → « X g ».
+ * Format des contenus d'emballage dans la tour et dans `?v=2` : ≥ 1 000 g → « X kg » (deux
+ * décimales au plus, zéros inutiles retirés, virgule), < 1 000 g → « X g ».
  *
  *     node scripts/test-contents.mjs
  */
@@ -34,10 +34,13 @@ test('g ≥ 1 000 g : en kilos (« 5 kg », jamais « 5000 g »)', () => {
   assert.equal(packContent(pack(999, 'g')), '999 g');
 });
 
-test('une décimale au plus', () => {
-  assert.equal(packContent(pack(1.25, 'kg')), '1,3 kg');
-  assert.equal(packContent(pack(1240, 'g')), '1,2 kg');
-  assert.equal(packContent(pack(2.75, 'kg')), '2,8 kg');
+test('deux décimales au plus, zéros inutiles retirés', () => {
+  assert.equal(packContent(pack(1.25, 'kg')), '1,25 kg');
+  assert.equal(packContent(pack(1240, 'g')), '1,24 kg');
+  assert.equal(packContent(pack(2.75, 'kg')), '2,75 kg');
+  assert.equal(packContent(pack(1.255, 'kg')), '1,26 kg');
+  assert.equal(packContent(pack(1.5, 'kg')), '1,5 kg');
+  assert.equal(packContent(pack(1100, 'g')), '1,1 kg');
 });
 
 test('total de plusieurs emballages', () => {
@@ -59,10 +62,10 @@ test('?v=2 : libellé d’unité au bon format', () => {
   assert.equal(formatOf(pack(1.5, 'kg')).grams, 1500);
 });
 
-test('jamais plus d’une décimale ni « ≥ 1000 g »', () => {
+test('jamais plus de deux décimales, ni zéro final, ni « ≥ 1000 g »', () => {
   for (let g = 1; g <= 20000; g += 7) {
     const text = packContent(pack(g, 'g'));
-    if (g >= 1000) assert.match(text, /^\d+(,\d)? kg$/, `${g} g → ${text}`);
+    if (g >= 1000) assert.match(text, /^\d+(,\d?[1-9])? kg$/, `${g} g → ${text}`);
     else assert.equal(text, `${g} g`);
   }
 });
