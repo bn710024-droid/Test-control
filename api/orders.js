@@ -249,6 +249,10 @@ function fromPayload(body) {
       // Moyen choisi par le client. Le paiement lui-même n'est jamais cru sur parole : aucun
       // prestataire n'est relié, c'est l'équipe qui pointe l'argent reçu.
       payment: pro ? null : choiceOf(body.payment),
+      // Devise de la commande (ISO 4217), telle que l'application l'a calculée : jamais convertie.
+      currency: /^[A-Z]{3}$/.test(String(body.currency ?? '')) ? body.currency : 'EUR',
+      // Commande passée pour un proche : lien de localisation éventuel fourni par le client.
+      ...(pro ? null : { for_self: body.forSelf !== false, location_link: clip(body.locationLink, 300) }),
       note: clip(body.note, 600),
       status: 'attente',
       status_at: new Date().toISOString(),

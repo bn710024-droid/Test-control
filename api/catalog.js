@@ -3,12 +3,14 @@ import { loadSeals, stateOf, AUDIENCE_KEY, proHiddenOf } from './_seal.js';
 import { buildDocument, DEFAULT_RULES, zoneOf, isCountryCode } from '../shared/catalog.js';
 import { requestMessageOf } from '../shared/requests.js';
 import { annonceState } from '../shared/orders.js';
+import { toAppDocument } from '../shared/catalog-v2.js';
 
 /**
  * Catalogue publié — lecture publique, sans authentification.
  *
- * C'est l'adresse à renseigner dans `CATALOG_ENDPOINT` (lib/config.ts de l'application d'achat).
- * Le document suit `lib/catalog/schema.ts` (schema: 1). Il ne contient aucune donnée personnelle.
+ * `?v=2` : document AU FORMAT DE L'APPLICATION (schema: 2, voir shared/catalog-v2.js) — c'est
+ * l'adresse que lit l'application (`<tour>/api/catalog?v=2`). Sans `v` : document historique
+ * (schema: 1, clés de la tour), gardé pour compatibilité. Aucune donnée personnelle.
  * Seules les lignes validées par l'administration (scellé intact) y figurent.
  */
 export default async function handler(req, res) {
@@ -128,6 +130,10 @@ export default async function handler(req, res) {
     ];
     // Cache court : une annonce activée, désactivée ou arrivée à son terme se voit en quelques secondes.
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');
+    if (String(req.query?.v ?? '') === '2') {
+      const demoIds = new Set(okProducts.filter((p) => p.is_example === true).map((p) => p.id));
+      return res.status(200).json(toAppDocument(doc, { demoIds }));
+    }
     return res.status(200).json(doc);
   } catch (err) {
     console.error('API error:', err?.message || err);

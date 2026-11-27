@@ -1,0 +1,2163 @@
+{
+ "doc": {
+  "schema": 1,
+  "updatedAt": "2026-11-22T00:00:00.000Z",
+  "example": true,
+  "rules": {
+   "standard": {
+    "minKg": 500,
+    "stepKg": 100,
+    "maxKg": 100000
+   },
+   "avion": {
+    "minKg": 500,
+    "stepKg": 500,
+    "maxKg": 100000
+   },
+   "bateau": {
+    "minContainers": 1,
+    "stepContainers": 1,
+    "maxContainers": 99,
+    "containerKg": 22000,
+    "containerLabel": "Europe"
+   }
+  },
+  "campaigns": [
+   {
+    "id": "mangue",
+    "accent": "du Sénégal",
+    "body": "Kent et Keitt, récoltées de mai à octobre.",
+    "photo": {
+     "asset": "campaign:mangue"
+    },
+    "enabled": false
+   },
+   {
+    "id": "melon",
+    "accent": "du Sénégal",
+    "body": "Pleine récolte de février à mai.",
+    "photo": {
+     "asset": "campaign:melon"
+    },
+    "enabled": true,
+    "startsAt": "2026-02-01T00:00:00.000Z",
+    "endsAt": "2026-06-01T00:00:00.000Z"
+   }
+  ],
+  "delivery": {
+   "gp": []
+  },
+  "products": [
+   {
+    "id": "pomme",
+    "name": "Pomme",
+    "variety": "Gala",
+    "category": "fruits",
+    "origin": "Val de Loire",
+    "description": "Croquante, juteuse et franchement sucrée, avec une pointe d’acidité qui la rend irrésistible à la croque. Elle tient aussi très bien à la cuisson : tarte fine, compote sans sucre ajouté, rôtie au four.",
+    "photo": {
+     "asset": "pomme"
+    },
+    "tint": "#E4503F",
+    "months": [
+     8,
+     9,
+     10,
+     11,
+     12,
+     1,
+     2,
+     3,
+     4
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.8,
+    "reviews": 412,
+    "retail": {
+     "price": 3.2,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "poire",
+    "name": "Poire",
+    "variety": "Comice",
+    "category": "fruits",
+    "origin": "Anjou",
+    "description": "Une chair fondante, presque beurrée, et un jus très parfumé. La Comice se déguste bien mûre, à la cuillère, ou pochée au vin et aux épices pour un dessert d’hiver.",
+    "photo": {
+     "asset": "poire"
+    },
+    "tint": "#B3C653",
+    "months": [
+     9,
+     10,
+     11,
+     12,
+     1,
+     2
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.7,
+    "reviews": 198,
+    "retail": {
+     "price": 3.9,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "banane",
+    "name": "Banane",
+    "variety": "Cavendish",
+    "category": "fruits",
+    "origin": "Côte d’Ivoire",
+    "description": "Récoltée verte puis mûrie à point, douce et crémeuse. Idéale au goûter, en rondelles sur un porridge, ou très mûre dans un banana bread.",
+    "photo": {
+     "asset": "banane"
+    },
+    "tint": "#F1CF45",
+    "months": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 530,
+    "retail": {
+     "price": 2.2,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [
+     {
+      "mode": null,
+      "available": true,
+      "prices": {
+       "EXW": 0.52,
+       "FOB": 0.66
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": []
+   },
+   {
+    "id": "raisin",
+    "name": "Raisin blanc",
+    "variety": "Italia",
+    "category": "fruits",
+    "origin": "Pouilles, Italie",
+    "description": "De gros grains dorés à la peau fine, croquants, au léger goût muscaté. À picorer tel quel, avec un plateau de fromages, ou rôti quelques minutes avec une volaille.",
+    "photo": {
+     "asset": "raisin"
+    },
+    "tint": "#BFD46A",
+    "months": [
+     8,
+     9,
+     10,
+     11
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.7,
+    "reviews": 164,
+    "retail": {
+     "price": 5.9,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "kaki",
+    "name": "Kaki",
+    "variety": "Persimon",
+    "category": "fruits",
+    "origin": "Valence, Espagne",
+    "description": "Un kaki à chair ferme qui se croque comme une pomme, sans aucune astringence. Sa saveur rappelle l’abricot et la vanille ; superbe en fines tranches dans une salade d’automne.",
+    "photo": {
+     "asset": "kaki"
+    },
+    "tint": "#EE7B31",
+    "months": [
+     10,
+     11,
+     12,
+     1
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.5,
+    "reviews": 87,
+    "retail": {
+     "price": 0.95,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "figue",
+    "name": "Figue violette",
+    "variety": "Solliès",
+    "category": "fruits",
+    "origin": "Var",
+    "description": "Peau fine et violette, chair rouge grenat, dense et confiturée. Crue avec un chèvre frais et un filet de miel, ou rôtie cinq minutes au four.",
+    "photo": {
+     "asset": "figue"
+    },
+    "tint": "#B04A78",
+    "months": [
+     8,
+     9,
+     10,
+     11
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.9,
+    "reviews": 143,
+    "retail": {
+     "price": 5.4,
+     "unit": "unit",
+     "unitLabel": "la barquette de 500 g",
+     "noun": [
+      "barquette",
+      "barquettes"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "peche",
+    "name": "Pêche blanche",
+    "variety": "Chair blanche",
+    "category": "fruits",
+    "origin": "Roussillon",
+    "description": "Chair blanche très juteuse, parfum floral, peau de velours. Le fruit d’été par excellence, à croquer au-dessus de l’évier ou à pocher dans un sirop à la verveine.",
+    "photo": {
+     "asset": "peche"
+    },
+    "tint": "#F07C6C",
+    "months": [
+     6,
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.8,
+    "reviews": 276,
+    "retail": {
+     "price": 4.9,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "prune",
+    "name": "Prune rouge",
+    "variety": "Chair jaune",
+    "category": "fruits",
+    "origin": "Tarn-et-Garonne",
+    "description": "Peau rouge sombre légèrement acidulée, chair jaune fondante et sucrée. Excellente en clafoutis, en tarte rustique ou simplement nature.",
+    "photo": {
+     "asset": "prune"
+    },
+    "tint": "#CC3F5C",
+    "months": [
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 95,
+    "retail": {
+     "price": 4.5,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "abricot",
+    "name": "Abricot",
+    "variety": "Bergeron",
+    "category": "fruits",
+    "origin": "Drôme",
+    "description": "Ferme, parfumé, avec ce qu’il faut d’acidité : le Bergeron est l’abricot des confitures et des tartes, mais il se croque tout aussi bien.",
+    "photo": {
+     "asset": "abricot"
+    },
+    "tint": "#F6913B",
+    "months": [
+     6,
+     7,
+     8
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.7,
+    "reviews": 221,
+    "retail": {
+     "price": 5.5,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "melon",
+    "name": "Melon",
+    "variety": "Cantaloup brodé",
+    "category": "fruits",
+    "origin": "Sénégal",
+    "description": "Écorce brodée, chair orangée très sucrée et gorgée d’eau. En entrée avec un jambon cru, en billes dans une salade de fruits ou mixé en soupe glacée.",
+    "photo": {
+     "asset": "melon"
+    },
+    "tint": "#F2A766",
+    "months": [
+     2,
+     3,
+     4,
+     5
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 308,
+    "retail": {
+     "price": 3.5,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [
+     {
+      "mode": null,
+      "available": true,
+      "prices": {
+       "EXW": 0.95,
+       "FOB": 1.15
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": []
+   },
+   {
+    "id": "fraise",
+    "name": "Fraise",
+    "variety": "Charlotte",
+    "category": "rouges",
+    "origin": "Périgord",
+    "description": "Une fraise en forme de cœur, très sucrée, au parfum de fraise des bois. Nature, avec une chantilly maison ou quelques feuilles de basilic.",
+    "photo": {
+     "asset": "fraise"
+    },
+    "tint": "#E8413C",
+    "months": [
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.9,
+    "reviews": 487,
+    "retail": {
+     "price": 3.9,
+     "unit": "unit",
+     "unitLabel": "la barquette de 250 g",
+     "noun": [
+      "barquette",
+      "barquettes"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "cerise",
+    "name": "Cerise",
+    "variety": "Bigarreau",
+    "category": "rouges",
+    "origin": "Vaucluse",
+    "description": "Charnue, croquante et bien sucrée, cueillie avec sa queue verte, signe de fraîcheur. La saison est courte : profitez-en en clafoutis ou à pleines poignées.",
+    "photo": {
+     "asset": "cerise"
+    },
+    "tint": "#DC2548",
+    "months": [
+     5,
+     6,
+     7
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.8,
+    "reviews": 205,
+    "retail": {
+     "price": 12.9,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.25
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "framboise",
+    "name": "Framboise",
+    "variety": "Tulameen",
+    "category": "rouges",
+    "origin": "Corrèze",
+    "description": "Gros fruits allongés, parfumés et délicatement acidulés. Sur une tarte sablée, dans un fromage blanc ou écrasées en coulis minute.",
+    "photo": {
+     "asset": "framboise"
+    },
+    "tint": "#E2396C",
+    "months": [
+     6,
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.7,
+    "reviews": 173,
+    "retail": {
+     "price": 3.2,
+     "unit": "unit",
+     "unitLabel": "la barquette de 125 g",
+     "noun": [
+      "barquette",
+      "barquettes"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "myrtille",
+    "name": "Myrtille",
+    "variety": "Bluecrop",
+    "category": "rouges",
+    "origin": "Landes",
+    "description": "Des baies fermes et douces, couvertes de leur pruine bleutée. À parsemer sur un granola, dans des pancakes ou des muffins.",
+    "photo": {
+     "asset": "myrtille"
+    },
+    "tint": "#6C86DB",
+    "months": [
+     6,
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.7,
+    "reviews": 152,
+    "retail": {
+     "price": 3.4,
+     "unit": "unit",
+     "unitLabel": "la barquette de 125 g",
+     "noun": [
+      "barquette",
+      "barquettes"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "orange",
+    "name": "Orange",
+    "variety": "Navel",
+    "category": "agrumes",
+    "origin": "Égypte",
+    "description": "Sans pépins, facile à peler, à la pulpe juteuse et équilibrée. Aussi bonne à table qu’en jus pressé du matin ou en suprêmes dans une salade de fenouil.",
+    "photo": {
+     "asset": "orange"
+    },
+    "tint": "#F7971F",
+    "months": [
+     12,
+     1,
+     2,
+     3
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.7,
+    "reviews": 366,
+    "retail": {
+     "price": 2.8,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [
+     {
+      "mode": null,
+      "available": true,
+      "prices": {
+       "EXW": 0.48,
+       "FOB": 0.6
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": []
+   },
+   {
+    "id": "citron",
+    "name": "Citron",
+    "variety": "Primofiore",
+    "category": "agrumes",
+    "origin": "Sicile",
+    "description": "Non traité après récolte : son zeste, très aromatique, s’utilise sans crainte. Un jus vif pour les vinaigrettes, les poissons et les tartes au citron.",
+    "photo": {
+     "asset": "citron"
+    },
+    "tint": "#F4D323",
+    "months": [
+     10,
+     11,
+     12,
+     1,
+     2,
+     3,
+     4
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.8,
+    "reviews": 289,
+    "retail": {
+     "price": 3.4,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "citronvert",
+    "name": "Citron vert",
+    "variety": "Lime de Tahiti",
+    "category": "agrumes",
+    "origin": "Brésil",
+    "description": "Petit, lourd, sans pépins et très juteux. Son acidité franche réveille un ceviche, un curry, un guacamole ou un simple verre d’eau pétillante.",
+    "photo": {
+     "asset": "citronvert"
+    },
+    "tint": "#A2D03F",
+    "months": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 118,
+    "retail": {
+     "price": 0.6,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "pamplemousse",
+    "name": "Pamplemousse",
+    "variety": "Pomelo rose Star Ruby",
+    "category": "agrumes",
+    "origin": "Afrique du Sud",
+    "description": "Pulpe rose soutenu, peu amère et très désaltérante. À la cuillère au petit-déjeuner, en quartiers avec de l’avocat et des crevettes, ou passé sous le gril.",
+    "photo": {
+     "asset": "pamplemousse"
+    },
+    "tint": "#F36C5E",
+    "months": [
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.5,
+    "reviews": 96,
+    "retail": {
+     "price": 1.2,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [
+     {
+      "mode": null,
+      "available": true,
+      "prices": {
+       "EXW": 0.62,
+       "FOB": 0.78
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": []
+   },
+   {
+    "id": "avocat",
+    "name": "Avocat",
+    "variety": "Fuerte",
+    "category": "exotiques",
+    "origin": "Kenya",
+    "description": "Chair jaune beurrée au goût de noisette, sous une peau fine et lisse. Écrasé sur une tartine, en dés dans un poke ou simplement à la vinaigrette.",
+    "photo": {
+     "asset": "avocat"
+    },
+    "tint": "#C3CB2C",
+    "months": [
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 402,
+    "retail": {
+     "price": 1.6,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [
+     {
+      "mode": null,
+      "available": true,
+      "prices": {
+       "EXW": 1.7,
+       "FOB": 1.95
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": []
+   },
+   {
+    "id": "mangue",
+    "name": "Mangue",
+    "variety": "Kent",
+    "category": "exotiques",
+    "origin": "Sénégal",
+    "description": "Une chair orangée fondante, sans fibres, très sucrée. La couleur de la peau ne dit rien de la maturité : fiez-vous à sa souplesse sous le doigt.",
+    "photo": {
+     "asset": "mangue"
+    },
+    "tint": "#D9A93A",
+    "months": [
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "pays",
+     "countries": [
+      "SN"
+     ]
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.7,
+    "reviews": 187,
+    "retail": {
+     "price": 2.9,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [
+     {
+      "mode": "avion",
+      "available": true,
+      "prices": {
+       "EXW": 1.35,
+       "FOB": 1.6
+      },
+      "priceUnit": "kg"
+     },
+     {
+      "mode": "bateau",
+      "available": true,
+      "prices": {
+       "EXW": null,
+       "FOB": null
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": []
+   },
+   {
+    "id": "ananas",
+    "name": "Ananas",
+    "variety": "Extra Sweet",
+    "category": "exotiques",
+    "origin": "Côte d’Ivoire",
+    "description": "Chair jaune d’or, peu acide et très parfumée. En carpaccio avec du citron vert, rôti au rhum et à la vanille ou grillé pour accompagner un porc laqué.",
+    "photo": {
+     "asset": "ananas"
+    },
+    "tint": "#E3AE3F",
+    "months": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 234,
+    "retail": {
+     "price": 3.4,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [
+     {
+      "mode": "bateau",
+      "available": true,
+      "prices": {
+       "EXW": 0.7,
+       "FOB": 0.88
+      },
+      "priceUnit": "kg"
+     },
+     {
+      "mode": "avion",
+      "available": true,
+      "prices": {
+       "EXW": null,
+       "FOB": null
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": []
+   },
+   {
+    "id": "kiwi",
+    "name": "Kiwi",
+    "variety": "Hayward",
+    "category": "exotiques",
+    "origin": "Vallée de l’Adour",
+    "description": "Cultivé dans le Sud-Ouest, vert émeraude, acidulé et sucré à la fois. Un seul fruit apporte plus de la moitié des besoins quotidiens en vitamine C.",
+    "photo": {
+     "asset": "kiwi"
+    },
+    "tint": "#A6C343",
+    "months": [
+     11,
+     12,
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.8,
+    "reviews": 318,
+    "retail": {
+     "price": 0.55,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "grenade",
+    "name": "Grenade",
+    "variety": "Wonderful",
+    "category": "exotiques",
+    "origin": "Égypte",
+    "description": "Des arilles rubis, sucrés, aux pépins tendres. Ils apportent du croquant et de la fraîcheur à un taboulé, un houmous ou une salade de chou.",
+    "photo": {
+     "asset": "grenade"
+    },
+    "tint": "#D03A4E",
+    "months": [
+     9,
+     10,
+     11,
+     12
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 104,
+    "retail": {
+     "price": 2.2,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [
+     {
+      "mode": null,
+      "available": true,
+      "prices": {
+       "EXW": 1.1,
+       "FOB": 1.3
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": []
+   },
+   {
+    "id": "mangue-sechee",
+    "name": "Mangue séchée",
+    "variety": "Kent séchée doucement",
+    "category": "seches",
+    "origin": "Sénégal",
+    "description": "Des lamelles charnues séchées à cœur, qui concentrent le sucre et le parfum du fruit frais. Souples sans être collantes, elles se grignotent telles quelles, se glissent dans un granola ou réhydratent une nuit dans un thé léger.",
+    "photo": {
+     "asset": "mangue-sechee"
+    },
+    "tint": "#E89A2B",
+    "months": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": true,
+    "rating": 0,
+    "reviews": 0,
+    "retail": {
+     "price": 3.2,
+     "unit": "unit",
+     "unitLabel": "le sachet de 500 g",
+     "noun": [
+      "sachet",
+      "sachets"
+     ],
+     "step": 1
+    },
+    "wholesale": [
+     {
+      "mode": "avion",
+      "available": true,
+      "prices": {
+       "EXW": 6.4,
+       "FOB": 6.9
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": [
+     {
+      "id": "sachet",
+      "label": "Sachet",
+      "detail": "Refermable",
+      "grams": 500,
+      "price": 3.2,
+      "noun": [
+       "sachet",
+       "sachets"
+      ],
+      "photo": {
+       "asset": "format:mangue-sechee:sachet"
+      },
+      "available": true
+     },
+     {
+      "id": "pot",
+      "label": "Pot",
+      "detail": "Premium",
+      "grams": 500,
+      "price": 4.5,
+      "noun": [
+       "pot",
+       "pots"
+      ],
+      "photo": {
+       "asset": "format:mangue-sechee:pot"
+      },
+      "available": true
+     },
+     {
+      "id": "carton",
+      "label": "Carton",
+      "detail": "Expédition",
+      "grams": null,
+      "price": null,
+      "noun": [
+       "carton",
+       "cartons"
+      ],
+      "photo": {
+       "asset": "format:mangue-sechee:carton"
+      },
+      "available": true,
+      "visibility": {
+       "mode": "pays",
+       "countries": [
+        "SN"
+       ]
+      }
+     }
+    ]
+   },
+   {
+    "id": "ananas-seche",
+    "name": "Ananas séché",
+    "variety": "Extra Sweet séché",
+    "category": "seches",
+    "origin": "Côte d’Ivoire",
+    "description": "Rondelles dorées au goût acidulé et solaire, séchées lentement pour garder un cœur tendre. À picorer, à casser en morceaux dans un muesli, ou à faire gonfler dans un rhum arrangé.",
+    "photo": {
+     "asset": "ananas-seche"
+    },
+    "tint": "#E3B93F",
+    "months": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": true,
+    "rating": 0,
+    "reviews": 0,
+    "retail": {
+     "price": 2.9,
+     "unit": "unit",
+     "unitLabel": "le sachet de 250 g",
+     "noun": [
+      "sachet",
+      "sachets"
+     ],
+     "step": 1
+    },
+    "wholesale": [
+     {
+      "mode": "bateau",
+      "available": true,
+      "prices": {
+       "EXW": 2.6,
+       "FOB": 2.9
+      },
+      "priceUnit": "kg",
+      "containerKg": 18000
+     }
+    ],
+    "formats": [
+     {
+      "id": "sachet",
+      "label": "Sachet",
+      "detail": "Refermable",
+      "grams": 250,
+      "price": 2.9,
+      "noun": [
+       "sachet",
+       "sachets"
+      ],
+      "photo": {
+       "asset": "format:ananas-seche:sachet"
+      },
+      "available": true
+     },
+     {
+      "id": "pot",
+      "label": "Pot",
+      "detail": "Premium",
+      "grams": 250,
+      "price": null,
+      "noun": [
+       "pot",
+       "pots"
+      ],
+      "photo": {
+       "asset": "format:ananas-seche:pot"
+      },
+      "available": false
+     }
+    ]
+   },
+   {
+    "id": "baobab",
+    "name": "Poudre de Baobab",
+    "variety": "Pulpe de fruit séchée",
+    "category": "transformes",
+    "origin": "Sénégal",
+    "description": "La pulpe du fruit de baobab, séchée puis tamisée : une poudre crème, naturellement acidulée, au goût de poire et de citron. Une cuillère dans un verre d’eau, un yaourt ou un smoothie suffit à parfumer.",
+    "photo": {
+     "asset": "baobab"
+    },
+    "tint": "#C9A86A",
+    "months": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": true,
+    "rating": 0,
+    "reviews": 0,
+    "retail": {
+     "price": 3.9,
+     "unit": "unit",
+     "unitLabel": "le sachet de 200 g",
+     "noun": [
+      "sachet",
+      "sachets"
+     ],
+     "step": 1
+    },
+    "wholesale": [
+     {
+      "mode": "bateau",
+      "available": true,
+      "prices": {
+       "EXW": null,
+       "FOB": null
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": [
+     {
+      "id": "sachet",
+      "label": "Sachet",
+      "detail": "Refermable",
+      "grams": 200,
+      "price": 3.9,
+      "noun": [
+       "sachet",
+       "sachets"
+      ],
+      "photo": {
+       "asset": "format:baobab:sachet"
+      },
+      "preview": {
+       "asset": "preview:baobab:sachet"
+      },
+      "available": true,
+      "settings": [
+       {
+        "mode": "pays",
+        "countries": [
+         "SN"
+        ],
+        "price": 2500,
+        "currency": "XOF"
+       }
+      ]
+     },
+     {
+      "id": "pot",
+      "label": "Pot",
+      "detail": "Premium",
+      "grams": 200,
+      "price": 5.2,
+      "noun": [
+       "pot",
+       "pots"
+      ],
+      "photo": {
+       "asset": "format:baobab:pot"
+      },
+      "preview": {
+       "asset": "preview:baobab:pot"
+      },
+      "description": "Pot en verre refermable de 200 g : la poudre reste à l’abri de l’humidité, prête à doser à la cuillère.",
+      "available": true,
+      "min": 1,
+      "step": 1,
+      "max": 10
+     }
+    ]
+   },
+   {
+    "id": "bissap",
+    "name": "Poudre de Bissap",
+    "variety": "Fleurs d’hibiscus",
+    "category": "transformes",
+    "origin": "Sénégal",
+    "description": "Les fleurs d’hibiscus séchées puis moulues : une poudre rubis, vive et légèrement acidulée, qui colore et parfume. Infusée froide ou chaude en jus de bissap, ou mêlée à un sucre pour une note fleurie.",
+    "photo": {
+     "asset": "bissap"
+    },
+    "tint": "#B0244A",
+    "months": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": true,
+    "rating": 0,
+    "reviews": 0,
+    "retail": {
+     "price": 3.5,
+     "unit": "unit",
+     "unitLabel": "le sachet de 200 g",
+     "noun": [
+      "sachet",
+      "sachets"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": [
+     {
+      "id": "sachet",
+      "label": "Sachet",
+      "detail": "Refermable",
+      "grams": 200,
+      "price": 3.5,
+      "noun": [
+       "sachet",
+       "sachets"
+      ],
+      "photo": {
+       "asset": "format:bissap:sachet"
+      },
+      "available": true
+     },
+     {
+      "id": "pot",
+      "label": "Pot",
+      "detail": "Premium",
+      "grams": 200,
+      "price": null,
+      "noun": [
+       "pot",
+       "pots"
+      ],
+      "photo": {
+       "asset": "format:bissap:pot"
+      },
+      "available": true
+     }
+    ]
+   },
+   {
+    "id": "tomate",
+    "name": "Tomate grappe",
+    "variety": "Ronde en grappe",
+    "category": "legumes",
+    "origin": "Maroc",
+    "description": "Cueillie sur sa grappe, ferme et juteuse, avec ce parfum vert si reconnaissable. En salade, farcie, ou fondue doucement pour une sauce maison.",
+    "photo": {
+     "asset": "tomate"
+    },
+    "tint": "#EC4034",
+    "months": [
+     10,
+     11,
+     12,
+     1,
+     2,
+     3,
+     4,
+     5
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 451,
+    "retail": {
+     "price": 3.9,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [
+     {
+      "mode": null,
+      "available": true,
+      "prices": {
+       "EXW": 0.9,
+       "FOB": 1.08
+      },
+      "priceUnit": "kg"
+     }
+    ],
+    "formats": []
+   },
+   {
+    "id": "carotte",
+    "name": "Carotte fanes",
+    "variety": "Nantaise",
+    "category": "legumes",
+    "origin": "Val de Loire",
+    "description": "Fines, tendres et sucrées, vendues avec leurs fanes bien vertes. Crues à la croque, glacées au beurre, et les fanes en pesto ou en velouté.",
+    "photo": {
+     "asset": "carotte"
+    },
+    "tint": "#F2843C",
+    "months": [
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.8,
+    "reviews": 297,
+    "retail": {
+     "price": 2.6,
+     "unit": "unit",
+     "unitLabel": "la botte",
+     "noun": [
+      "botte",
+      "bottes"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "brocoli",
+    "name": "Brocoli",
+    "variety": "Calabrais",
+    "category": "legumes",
+    "origin": "Bretagne",
+    "description": "Bouquets serrés, vert profond, tige tendre. Quelques minutes à la vapeur suffisent ; rôti au four avec de l’ail et du citron, il devient addictif.",
+    "photo": {
+     "asset": "brocoli"
+    },
+    "tint": "#77AA57",
+    "months": [
+     6,
+     7,
+     8,
+     9,
+     10,
+     11
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.5,
+    "reviews": 183,
+    "retail": {
+     "price": 2.4,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "choufleur",
+    "name": "Chou-fleur",
+    "variety": "Blanc",
+    "category": "legumes",
+    "origin": "Bretagne",
+    "description": "Pomme dense et bien blanche, protégée par ses feuilles. Rôti entier aux épices, en gratin, en semoule crue ou en velouté onctueux.",
+    "photo": {
+     "asset": "choufleur"
+    },
+    "tint": "#E6DCC0",
+    "months": [
+     9,
+     10,
+     11,
+     12,
+     1,
+     2,
+     3,
+     4
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.5,
+    "reviews": 129,
+    "retail": {
+     "price": 3.2,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "potimarron",
+    "name": "Potimarron",
+    "variety": "Red Kuri",
+    "category": "legumes",
+    "origin": "Alsace",
+    "description": "Une courge à la chair orange vif et au goût de châtaigne. Inutile de l’éplucher : la peau fond à la cuisson. En velouté, rôtie en quartiers ou en purée.",
+    "photo": {
+     "asset": "potimarron"
+    },
+    "tint": "#EA5A2C",
+    "months": [
+     9,
+     10,
+     11,
+     12,
+     1,
+     2
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.8,
+    "reviews": 211,
+    "retail": {
+     "price": 3.6,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "oignon",
+    "name": "Oignon rouge",
+    "variety": "Red Baron",
+    "category": "legumes",
+    "origin": "Bourgogne",
+    "description": "Plus doux et plus sucré que le jaune, il se mange volontiers cru. En fines lamelles dans une salade, en pickles express ou confit longuement.",
+    "photo": {
+     "asset": "oignon"
+    },
+    "tint": "#C0477A",
+    "months": [
+     8,
+     9,
+     10,
+     11,
+     12,
+     1,
+     2,
+     3
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.5,
+    "reviews": 142,
+    "retail": {
+     "price": 2.9,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5,
+     "min": 4
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "radis",
+    "name": "Radis",
+    "variety": "Rond écarlate",
+    "category": "legumes",
+    "origin": "Val de Loire",
+    "description": "Croquants, juteux, juste assez piquants. À la croque-au-sel avec du beurre demi-sel, ou en rondelles dans une salade. Les fanes font un excellent potage.",
+    "photo": {
+     "asset": "radis"
+    },
+    "tint": "#E64262",
+    "months": [
+     3,
+     4,
+     5,
+     6,
+     9,
+     10
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 121,
+    "retail": {
+     "price": 1.7,
+     "unit": "unit",
+     "unitLabel": "la botte",
+     "noun": [
+      "botte",
+      "bottes"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "poivron",
+    "name": "Poivron rouge",
+    "variety": "Lamuyo",
+    "category": "legumes",
+    "origin": "Provence",
+    "description": "Chair épaisse, douce et sucrée, peau brillante. Grillé puis pelé et mariné à l’huile d’olive, farci, ou cru en lanières croquantes.",
+    "photo": {
+     "asset": "poivron"
+    },
+    "tint": "#F0402A",
+    "months": [
+     6,
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 158,
+    "retail": {
+     "price": 4.6,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "concombre",
+    "name": "Concombre",
+    "variety": "Court épineux",
+    "category": "legumes",
+    "origin": "Val de Loire",
+    "description": "Petit, ferme, très croquant, avec peu de pépins et aucune amertume. Parfait en tzatziki, en salade à la crème ou en pickles maison.",
+    "photo": {
+     "asset": "concombre"
+    },
+    "tint": "#63A552",
+    "months": [
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.4,
+    "reviews": 99,
+    "retail": {
+     "price": 1.3,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "courgette",
+    "name": "Courgette",
+    "variety": "Verte longue",
+    "category": "legumes",
+    "origin": "Provence",
+    "description": "Peau fine vert sombre, chair tendre et douce. Poêlée à l’ail, en gratin, en tagliatelles crues au citron ou râpée dans un gâteau.",
+    "photo": {
+     "asset": "courgette"
+    },
+    "tint": "#4FA460",
+    "months": [
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.5,
+    "reviews": 137,
+    "retail": {
+     "price": 2.9,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.5,
+     "min": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "ail",
+    "name": "Ail blanc",
+    "variety": "Blanc de Lomagne",
+    "category": "aromates",
+    "origin": "Gers",
+    "description": "Des caïeux réguliers, blancs ivoire, au piquant net et à la longue tenue. En chemise autour d’un rôti, frotté sur du pain grillé ou confit à l’huile.",
+    "photo": {
+     "asset": "ail"
+    },
+    "tint": "#E9DCC0",
+    "months": [
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.7,
+    "reviews": 176,
+    "retail": {
+     "price": 0.9,
+     "unit": "unit",
+     "unitLabel": "la tête",
+     "noun": [
+      "tête",
+      "têtes"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "gingembre",
+    "name": "Gingembre",
+    "variety": "Frais",
+    "category": "aromates",
+    "origin": "Pérou",
+    "description": "Rhizome ferme à la peau fine, chair jaune pâle, citronnée et piquante. Râpé dans un wok, infusé avec du citron et du miel, ou en marinade.",
+    "photo": {
+     "asset": "gingembre"
+    },
+    "tint": "#DDA86C",
+    "months": [
+     1,
+     2,
+     3,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10,
+     11,
+     12
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.7,
+    "reviews": 131,
+    "retail": {
+     "price": 8.9,
+     "unit": "kg",
+     "unitLabel": "le kg",
+     "noun": [
+      "kg",
+      "kg"
+     ],
+     "step": 0.1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "basilic",
+    "name": "Basilic",
+    "variety": "Grand vert",
+    "category": "aromates",
+    "origin": "Provence",
+    "description": "Grandes feuilles tendres, parfum poivré et anisé. Indispensable sur une tomate-mozzarella, pilé en pesto, ou ajouté au dernier moment sur des pâtes.",
+    "photo": {
+     "asset": "basilic"
+    },
+    "tint": "#69B840",
+    "months": [
+     5,
+     6,
+     7,
+     8,
+     9
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": true,
+    "demo": false,
+    "rating": 4.8,
+    "reviews": 204,
+    "retail": {
+     "price": 1.9,
+     "unit": "unit",
+     "unitLabel": "le bouquet",
+     "noun": [
+      "bouquet",
+      "bouquets"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "persil",
+    "name": "Persil plat",
+    "variety": "Géant d’Italie",
+    "category": "aromates",
+    "origin": "Île-de-France",
+    "description": "Plus parfumé que le frisé, avec des tiges tendres qui se cuisinent aussi. En persillade, dans un taboulé libanais ou une sauce verte.",
+    "photo": {
+     "asset": "persil"
+    },
+    "tint": "#86C843",
+    "months": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9,
+     10
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde",
+     "countries": []
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.6,
+    "reviews": 88,
+    "retail": {
+     "price": 1.1,
+     "unit": "unit",
+     "unitLabel": "la botte",
+     "noun": [
+      "botte",
+      "bottes"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   },
+   {
+    "id": "piment",
+    "name": "Piment",
+    "variety": "Bhut Jolokia",
+    "category": "aromates",
+    "origin": "Assam, Inde",
+    "description": "Le « piment fantôme », l’un des plus forts au monde : plus d’un million d’unités sur l’échelle de Scoville. Fruité, fumé… et réservé aux palais très avertis. Une pointe de couteau suffit pour un plat entier.",
+    "photo": {
+     "asset": "piment"
+    },
+    "tint": "#F24D47",
+    "months": [
+     7,
+     8,
+     9,
+     10
+    ],
+    "available": true,
+    "visibility": {
+     "mode": "monde_sauf",
+     "countries": [
+      "FR"
+     ]
+    },
+    "bio": false,
+    "demo": false,
+    "rating": 4.4,
+    "reviews": 62,
+    "retail": {
+     "price": 1.5,
+     "unit": "unit",
+     "unitLabel": "la pièce",
+     "noun": [
+      "pièce",
+      "pièces"
+     ],
+     "step": 1
+    },
+    "wholesale": [],
+    "formats": []
+   }
+  ]
+ },
+ "filters": [
+  {
+   "id": "tout",
+   "label": "Tout"
+  },
+  {
+   "id": "saison",
+   "label": "De saison"
+  },
+  {
+   "id": "fruits",
+   "label": "Fruits"
+  },
+  {
+   "id": "legumes",
+   "label": "Légumes"
+  },
+  {
+   "id": "agrumes",
+   "label": "Agrumes"
+  },
+  {
+   "id": "rouges",
+   "label": "Fruits rouges"
+  },
+  {
+   "id": "exotiques",
+   "label": "Exotiques"
+  },
+  {
+   "id": "seches",
+   "label": "Séchés"
+  },
+  {
+   "id": "transformes",
+   "label": "Transformés"
+  },
+  {
+   "id": "aromates",
+   "label": "Aromates"
+  }
+ ],
+ "labels": {
+  "fruits": "Fruits",
+  "rouges": "Fruits rouges",
+  "agrumes": "Agrumes",
+  "exotiques": "Exotiques",
+  "legumes": "Légumes",
+  "aromates": "Aromates",
+  "seches": "Séchés",
+  "transformes": "Transformés"
+ }
+}
