@@ -52,3 +52,18 @@ Relevé automatique (13 pages + 17 gestes à 1440×900, base locale) : **0 erreu
 ### 6. Sécurité (volontairement inchangé — phase de test)
 - `OPEN_ACCESS = true`, CORS `*`, réception des commandes non authentifiée, RLS à activer
   (voir `supabase/schema.sql` et `A-CONNECTER.md` de l'application).
+
+### 7. Moyens de paiement non réglables dans la tour
+- **Constat** : Orange Money, Wave, virement, carte sont écrits dans `api/catalog.js` ; aucun écran
+  de la tour ne les modifie (test en ligne : les 4 s'affichent bien dans l'application).
+- **Correctif proposé** : un réglage `settings.payments` (liste, ordre, activé) publié dans `?v=2`.
+
+### 8. Photos remplacées ou retirées : le fichier reste dans le stockage
+- **Reproduire** : envoyer une photo de produit, de rayon ou de filtre, puis la retirer → le
+  fichier reste dans l'espace `catalogue` (les photos d'emballage et de publication, elles, sont
+  supprimées).
+- **Correctif proposé** : supprimer l'ancien fichier à l'enregistrement (comme `removePackPhotos`).
+  Les 6 fichiers laissés par les tests du 27/11 ont été supprimés à la main.
+
+### 9. ~~Vidéo publiée servie avec retard (cache 15 s + 60 s)~~ — corrigé
+- Cache de `?public=videos` et `?public=photos` ramené à 5 s + 5 s, comme le catalogue.

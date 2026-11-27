@@ -295,8 +295,9 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const pub = req.query?.public;
       const live = (kind) => all.data.filter((r) => r.kind === kind && r.published && stateOf('publications', r, seals) === 'ok');
+      // Cache court, comme le catalogue : une vidéo publiée est servie à l'application en quelques secondes.
       if (pub === 'videos') {
-        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15, stale-while-revalidate=60');
+        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');
         return res.status(200).json(
           live('video')
             .map((r) => ({
@@ -313,7 +314,7 @@ export default async function handler(req, res) {
         );
       }
       if (pub === 'photos') {
-        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15, stale-while-revalidate=60');
+        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');
         return res.status(200).json(
           live('photos')
             // De la plus récente à la plus ancienne ; le même jour, la dernière créée d'abord.
