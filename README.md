@@ -15,7 +15,9 @@ de l'application d'achat n'est pas modifié.
 - Livraison GP par pays : Commandes › Livraison › « Pays desservis par le GP », publiés dans
   `delivery.gp` (copie publique scellée `settings.gp`, rien de personnel).
 - Commandes : devise (`currency`) et « pour un proche » enregistrées ; montants affichés dans la
-  devise de la commande (F CFA…).
+  devise de la commande (F CFA…) ; statistiques et clients : les sommes en € ne comptent que les
+  commandes en € (« N commande(s) dans une autre devise, non comptée(s) »).
+- Emballages publiés avec un libellé d'unité neutre (« par cagette de 5 kg »).
 - Textes devenus faux corrigés : plus de « appliquez le correctif » (le correctif
   `public/branchement/app-tropicaura.patch` est **obsolète**, voir LISEZ-MOI), adresse `?v=2`,
   variable `EXPO_PUBLIC_CONTROL_TOWER_URL`.
@@ -24,11 +26,12 @@ de l'application d'achat n'est pas modifié.
   et tests uniquement.
 - `supabase/schema.sql` : tables `product_requests` et `publication_reactions` documentées.
 - Lint : 0 erreur (typographie française tolérée) ; import `.vite-source-tags.js` retiré ;
-  paquet renommé `tropicaura-tour`.
+  paquet renommé `tropicaura-tour` ; `.env.example` (noms des variables, sans valeurs).
 
 **Testé réellement** (Chromium, 1440×900, tour locale) : `npm run build` OK ; 13 pages et
 17 gestes sans erreur console / réseau ; bout en bout avec l'application (dépôt
-Test-app-tropicaura, `scripts/test_tower_live.py`, 33/33). **Non testé** : base Supabase réelle,
+Test-app-tropicaura, `scripts/test_tower_live.py`, 36/36) ; fiche produit modifiée et
+enregistrée via l'interface (scellé valide). **Non testé** : base Supabase réelle,
 déploiement Vercel.
 
 **Restant** : `ERREURS.md` (statistiques multi-devises, annonce image sans produit…) et
