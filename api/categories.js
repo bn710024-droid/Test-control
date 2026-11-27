@@ -1,4 +1,5 @@
 import supabase from './db-client.js';
+import { removeUnusedPhotos } from './_files.js';
 import { preflight, requireAdmin, optionalAdmin, readBody, log, serverError } from './_lib.js';
 import { loadSeals, stateOf, sealRows, unseal, AUDIENCE_KEY, proHiddenOf, saveProHidden } from './_seal.js';
 import { validateCategory } from '../shared/catalog.js';
@@ -98,6 +99,7 @@ export default async function handler(req, res) {
         .single();
       if (error) throw error;
       await sealRows('categories', [data]);
+      if ((data.image_url ?? null) !== (current.image_url ?? null)) await removeUnusedPhotos([current.image_url]);
       const wasVisible = !hidden.includes(current.id);
       const proVisible = typeof body.pro_visible === 'boolean' ? body.pro_visible : wasVisible;
       if (proVisible !== wasVisible) {
@@ -127,6 +129,7 @@ export default async function handler(req, res) {
       const { error } = await supabase.from('categories').delete().eq('id', current.id);
       if (error) throw error;
       await unseal('categories', current.id);
+      await removeUnusedPhotos([current.image_url]);
       if (hidden.includes(current.id)) await saveProHidden(hidden.filter((x) => x !== current.id));
       await log(admin, 'delete', 'category', current.id, `Rayon « ${current.label} » supprimé`);
       return res.status(200).json({ ok: true });

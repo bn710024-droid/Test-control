@@ -14,7 +14,7 @@
   transport réglables dans la tour ; identifiant de compte aléatoire.
 - **À faire par l'équipe** : saisir les vrais forfaits de transport (Réglages › Transport) ; ajouter
   les contenus manquants des emballages (tour n° 3).
-- **Encore ouvert** (décisions de design ou de produit) : app n° 4, 8, 9 ; tour n° 2, 4, 8.
+- **Encore ouvert** (décisions de design ou de produit) : app n° 4, 8, 9 ; tour n° 2, 4.
 
 Format : écran · étapes pour reproduire · cause probable · correctif proposé. Ce qui a été corrigé
 cette nuit est dans `BUGS.md`.
@@ -60,12 +60,11 @@ Relevé automatique (13 pages + 17 gestes à 1440×900, base locale) : **0 erreu
   (mêmes `Block` et `Switch` que les autres réglages), au moins un reste activé ; publié dans
   `payments`. Test en ligne t2 : virement désactivé → absent de l'application.
 
-### 8. Photos remplacées ou retirées : le fichier reste dans le stockage
-- **Reproduire** : envoyer une photo de produit, de rayon ou de filtre, puis la retirer → le
-  fichier reste dans l'espace `catalogue` (les photos d'emballage et de publication, elles, sont
-  supprimées).
-- **Correctif proposé** : supprimer l'ancien fichier à l'enregistrement (comme `removePackPhotos`).
-  Les 6 fichiers laissés par les tests du 27/11 ont été supprimés à la main.
+### 8. ~~Photos remplacées ou retirées : le fichier reste dans le stockage~~ — corrigé
+- **Corrigé** (27/11, soir) : photo de produit, illustration de rayon ou image de filtre remplacée,
+  retirée ou supprimée avec sa ligne → fichier supprimé de l'espace `catalogue`, seulement si aucune
+  ligne (produits, rayons, réglages, emballages) ne le cite encore (`api/_files.js`,
+  `shared/files.js`, test `test-files.mjs`). En ligne : t1 vérifie « 0 fichier laissé ».
 
 ### 9. ~~Vidéo publiée servie avec retard (cache 15 s + 60 s)~~ — corrigé
 - Cache de `?public=videos` et `?public=photos` ramené à 5 s + 5 s, comme le catalogue.

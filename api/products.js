@@ -1,4 +1,5 @@
 import supabase from './db-client.js';
+import { removeUnusedPhotos } from './_files.js';
 import { preflight, requireAdmin, optionalAdmin, readBody, log, serverError } from './_lib.js';
 import { loadSeals, stateOf, sealRows, unseal } from './_seal.js';
 import { validateProduct, validatePackagings, validateZone, zoneOf, zoneLabel, DEFAULT_RULES, modeLabel } from '../shared/catalog.js';
@@ -228,6 +229,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Trop de modifications en une fois (120 au plus).' });
         }
         const results = [];
+        const replaced = [];
         for (const u of body.updates) {
           const current = byId.get(u?.id);
           if (!current) {
@@ -236,7 +238,10 @@ export default async function handler(req, res) {
           }
           const result = await applyUpdate(current, pick(u.changes || {}), u.expected_updated_at, ctx, admin, false);
           results.push({ id: current.id, ...result });
+          if (result.ok && (result.row.photo_url ?? null) !== (current.photo_url ?? null)) replaced.push(current.photo_url);
         }
+        // Photos remplacées ou retirées : leurs fichiers ne servent plus.
+        await removeUnusedPhotos(replaced);
         return res.status(200).json({ results });
       }
 
@@ -253,6 +258,8 @@ export default async function handler(req, res) {
       }
       const result = await applyUpdate(current, pick(body), body.expected_updated_at, ctx, admin, body.full === true);
       if (!result.ok) return res.status(result.status).json({ error: result.error, fields: result.fields });
+      // Photo du produit remplacée ou retirée : son fichier ne sert plus (s'il n'est cité nulle part).
+      if ((result.row.photo_url ?? null) !== (current.photo_url ?? null)) await removeUnusedPhotos([current.photo_url]);
       const before = (await loadPacks()).get(current.id) ?? [];
       let items = before;
       // La base range les clés dans son ordre à elle : on compare champ par champ.
@@ -305,17 +312,8 @@ export default async function handler(req, res) {
       await supabase.from('zones').delete().eq('id', id);
       await unseal('zones', id);
 
-      const marker = `/object/public/${BUCKET}/`;
-      if (current.photo_url && current.photo_url.includes(marker)) {
-        const path = current.photo_url.split(marker)[1];
-        if (path) {
-          try {
-            await supabase.storage.from(BUCKET).remove([path]);
-          } catch {
-            // L'image reste dans le stockage : sans conséquence pour le catalogue.
-          }
-        }
-      }
+      // Sa photo n'est supprimée que si aucune autre ligne ne la cite.
+      await removeUnusedPhotos([current.photo_url]);
       await log(admin, 'delete', 'product', id, `${current.name} : produit supprimé définitivement`);
       return res.status(200).json({ ok: true });
     }

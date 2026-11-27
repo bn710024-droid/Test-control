@@ -1,4 +1,5 @@
 import supabase from './db-client.js';
+import { removeUnusedPhotos } from './_files.js';
 import { preflight, requireAdmin, readBody, log, serverError } from './_lib.js';
 import { loadSeals, stateOf, sealRows, unseal, SEALED_TABLES, keyColumn } from './_seal.js';
 import { validateRules, validateProduct, validateCategory, DEFAULT_RULES } from '../shared/catalog.js';
@@ -93,7 +94,10 @@ export default async function handler(req, res) {
           const ratio = typeof f.image_ratio === 'number' && f.image_ratio >= 0.1 && f.image_ratio <= 10 ? Math.round(f.image_ratio * 1000) / 1000 : 1;
           filters[id] = { label, image_url: image, image_ratio: image ? ratio : 1 };
         }
+        const { data: old } = await supabase.from('settings').select('value').eq('key', 'filters').maybeSingle();
         const data = await save({ key: 'filters', value: filters });
+        // Images remplacées ou retirées : supprimées si plus rien ne les cite (celles gardées le sont).
+        await removeUnusedPhotos(['tout', 'saison'].map((id) => old?.value?.[id]?.image_url));
         await log(admin, 'update', 'settings', 'filters', 'Filtres de l’accueil modifiés (nom ou photo)');
         return res.status(200).json({ key, value: data.value });
       }
