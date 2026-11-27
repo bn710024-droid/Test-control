@@ -3,6 +3,7 @@ import supabase from './db-client.js';
 import { preflight, requireAdmin, optionalAdmin, readBody, log, serverError } from './_lib.js';
 import { tooMany } from './_limit.js';
 import { vaultSeal, vaultOpen, sealRows } from './_seal.js';
+import { stampOf, sameButLocation } from '../shared/stamp.js';
 import { resolveOffer, parseRules, isCountryCode } from '../shared/catalog.js';
 import { isRequestStatus, requestKey, requestStatusLabel } from '../shared/requests.js';
 import { clientNotice, isSenegal, PRO_STAGES, isProStage, proStageOf, proStageFromStatus, proStageLabel, statusOfProStage } from '../shared/orders.js';
@@ -90,6 +91,32 @@ async function save(id, order, receivedAt) {
   if (receivedAt) row.received_at = receivedAt;
   const { error } = await supabase.from('orders').upsert(row, { onConflict: 'id' });
   if (error) throw error;
+}
+
+// ───────────── Écritures concurrentes
+// Une commande est un seul bloc chiffré : deux écritures simultanées (l'équipe change le statut,
+// l'application du client envoie sa position) feraient perdre la première. Chaque bloc commence par
+// « v1.iv.étiquette », propre à chaque écriture (IV aléatoire, étiquette GCM) : on ne remplace la
+// ligne que si elle commence encore par l'empreinte lue.
+
+async function loadOne(id) {
+  const { data: row, error } = await supabase.from('orders').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  const order = row ? vaultOpen(row.id, row.enc) : null;
+  return order ? { row, order } : null;
+}
+
+/** Remplace la commande seulement si personne ne l'a modifiée depuis sa lecture (`readEnc`). */
+async function saveIfUnchanged(id, order, readEnc) {
+  const { id: _id, received_at: _r, ...content } = order;
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ enc: vaultSeal(id, content) })
+    .eq('id', id)
+    .like('enc', `${stampOf(readEnc)}.%`)
+    .select('id');
+  if (error) throw error;
+  return Array.isArray(data) && data.length === 1;
 }
 
 // ───────────── Livraison : le GP (transit international) et nos livreurs
@@ -204,14 +231,26 @@ async function trackPosition(req, body, res) {
   const spot = positionOf(body);
   if (account.length < 6 || !reference) return res.status(400).json({ error: 'Compte ou référence manquant.' });
   if (!spot) return res.status(400).json({ error: 'Position illisible.' });
-  const order = (await loadAll()).find((o) => o.customer.account_id === account && o.number === reference);
-  if (!order) return res.status(404).json({ error: 'Commande introuvable.' });
+  const found = (await loadAll()).find((o) => o.customer.account_id === account && o.number === reference);
+  if (!found) return res.status(404).json({ error: 'Commande introuvable.' });
+  const ended = (o) => o.status === 'livree' || o.status === 'annulee';
   // Une commande reçue ou annulée n'est plus suivie : la position n'est plus enregistrée.
-  if (order.status === 'livree' || order.status === 'annulee') return res.status(200).json({ ok: true, tracking: false });
+  if (ended(found)) return res.status(200).json({ ok: true, tracking: false });
   // Au plus une écriture toutes les quinze secondes par commande.
-  const last = order.location?.at ? new Date(order.location.at).getTime() : 0;
-  if (Date.now() - last >= 15000) await save(order.id, { ...order, location: spot });
-  return res.status(200).json({ ok: true, tracking: true });
+  const last = found.location?.at ? new Date(found.location.at).getTime() : 0;
+  if (Date.now() - last < 15000) return res.status(200).json({ ok: true, tracking: true });
+  // La position est posée sur la copie la plus récente, et seulement si elle n'a pas bougé entre la
+  // lecture et l'écriture : un changement de statut fait au même moment par l'équipe est conservé.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const fresh = await loadOne(found.id);
+    if (!fresh) return res.status(404).json({ error: 'Commande introuvable.' });
+    if (ended(fresh.order)) return res.status(200).json({ ok: true, tracking: false });
+    if (await saveIfUnchanged(found.id, { ...fresh.order, location: spot }, fresh.row.enc)) {
+      return res.status(200).json({ ok: true, tracking: true });
+    }
+  }
+  // Commande très sollicitée : cette position est abandonnée, la suivante sera enregistrée.
+  return res.status(200).json({ ok: true, tracking: true, saved: false });
 }
 
 function fromPayload(body) {
@@ -779,7 +818,19 @@ export default async function handler(req, res) {
       }
 
       if (changes.length > 0) {
-        await save(row.id, next);
+        // Écriture conditionnelle : si la commande a changé depuis sa lecture, on ne reprend que la
+        // nouvelle position du client ; tout autre changement (un autre membre de l'équipe) est refusé.
+        let saved = await saveIfUnchanged(row.id, next, row.enc);
+        for (let attempt = 0; !saved && attempt < 2; attempt += 1) {
+          const fresh = await loadOne(row.id);
+          if (!fresh) return res.status(404).json({ error: 'Commande introuvable : elle a peut-être été supprimée.' });
+          if (!sameButLocation(fresh.order, current)) {
+            return res.status(409).json({ error: 'Cette commande vient d’être modifiée par ailleurs : rechargez la page, puis recommencez.' });
+          }
+          next.location = fresh.order.location;
+          saved = await saveIfUnchanged(row.id, next, fresh.row.enc);
+        }
+        if (!saved) return res.status(409).json({ error: 'Cette commande vient d’être modifiée par ailleurs : rechargez la page, puis recommencez.' });
         await log(admin, 'update', 'order', row.id, `Commande ${current.number} : ${changes.join(', ')}`);
       }
       return res.status(200).json({ ...next, id: row.id, received_at: row.received_at, delivery_mode: deliveryMode(next, (await loadLogistics()).gpDelivery) });
