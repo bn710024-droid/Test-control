@@ -34,6 +34,8 @@ export type Order = {
   transport_cost: number;
   total: number;
   unpriced: number;
+  /** Devise de la commande (ISO 4217), envoyée par l'application ; absente : EUR. */
+  currency?: string;
   payment: string | null;
   note: string;
   status: OrderStatus;

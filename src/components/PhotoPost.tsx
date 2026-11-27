@@ -393,7 +393,7 @@ export function PhotoSheet({ target, onClose, onSaved }: {
   const caption =
     shots.length === 0
       ? 'Ajoutez vos photos : le client les fait défiler de côté, la description reste dessous.'
-      : 'Dans l’application : Favoris › Publications › Photos. Le client peut aimer et commenter ; rien ne mène à un produit.';
+      : 'L’application n’affiche pas encore les publications photo : l’écran reste à ajouter. Rien n’y mènera à un produit.';
   const tile = 'press relative aspect-square overflow-hidden rounded-2xl border-2';
 
   return (

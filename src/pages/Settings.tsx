@@ -347,7 +347,7 @@ export default function Settings() {
             <Block id="publication" title="Publication" aside={<Chip tone={linked ? 'leaf' : 'neutral'} icon={linked ? checkmarkCircle : linkOutline}>{linked ? 'Reliée' : 'Non reliée'}</Chip>}>
               <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
                 Chaque enregistrement met à jour le catalogue publié à cette adresse, au format attendu par l’application d’achat
-                (lib/catalog/schema.ts, schema 1).
+                (lib/catalog/schema.ts, schema 2, adresse ?v=2).
               </p>
               <div className="mt-3 flex items-center gap-2 rounded-2xl border border-line bg-black/25 p-1.5 pl-3.5">
                 <code className="min-w-0 flex-1 truncate text-[13px] text-fg">{endpoint}</code>

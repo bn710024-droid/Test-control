@@ -8,7 +8,7 @@ import { Backdrop } from '../components/Shell';
 import { Chip, EmptyState, ErrorPanel, Field, FilterChip, GhostButton, Notice, Page, PageHeader, PrimaryButton, Segmented, Sheet, SkeletonRows } from '../components/ui';
 import { CountryChips } from '../components/CountryChips';
 import { ApiError, messageOf } from '../lib/api';
-import { MONTHS, ago, count, dateTime, euro, kgText, money, normalize, plural } from '../lib/format';
+import { MONTHS, ago, amount, count, dateTime, kgText, money, normalize, plural } from '../lib/format';
 import { cx } from '../lib/ui';
 import { PRO_STAGES, clientNotice, proStageLabel, proStageOf, type ProStage } from '../../shared/orders.js';
 import { countryName, isCountryCode } from '../../shared/catalog.js';
@@ -42,7 +42,7 @@ const placeOf = (o: Order) => o.country || o.address || 'Adresse non renseignée
 const destinationOf = (o: Order) => (o.country && o.address.includes(o.country) ? o.address : [o.address, o.country].filter(Boolean).join(', '));
 /** Une commande annulée ne compte dans aucun montant. */
 const counted = (o: Order) => o.status !== 'annulee';
-const amountText = (o: Order) => (o.total > 0 ? `${euro(o.total)}${o.unpriced > 0 ? ' +' : ''}` : 'À confirmer');
+const amountText = (o: Order) => (o.total > 0 ? `${amount(o.total, o.currency)}${o.unpriced > 0 ? ' +' : ''}` : 'À confirmer');
 const nameInitials = (name: string) => {
   const parts = name.replace(/\(.*?\)/g, '').trim().split(/\s+/).filter(Boolean);
   return parts.length === 0 ? '?' : (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
@@ -666,18 +666,18 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
                   </span>
                   <span className="block text-[12.5px] text-fg-faint">
                     {qtyText(l)}
-                    {l.unit_price !== null ? ` × ${euro(l.unit_price)}` : ''}
+                    {l.unit_price !== null ? ` × ${amount(l.unit_price, o.currency)}` : ''}
                   </span>
                 </span>
-                <span className={cx('tabular shrink-0 text-[14.5px] font-extrabold', l.total === null && 'text-[12.5px] text-star')}>{l.total === null ? 'Prix à confirmer' : euro(l.total)}</span>
+                <span className={cx('tabular shrink-0 text-[14.5px] font-extrabold', l.total === null && 'text-[12.5px] text-star')}>{l.total === null ? 'Prix à confirmer' : amount(l.total, o.currency)}</span>
               </li>
             ))}
           </ul>
           <dl className="mt-1 border-t border-line-strong pt-1">
             {o.incoterm && <Row label="Incoterm">{o.incoterm}</Row>}
-            {o.transport_cost > 0 && <Row label="Transport">{euro(o.transport_cost)}</Row>}
+            {o.transport_cost > 0 && <Row label="Transport">{amount(o.transport_cost, o.currency)}</Row>}
             <Row label={o.unpriced > 0 ? 'Total des lignes chiffrées' : 'Total'}>
-              <span className="tabular text-[17px] font-extrabold">{o.total > 0 ? euro(o.total) : 'À confirmer'}</span>
+              <span className="tabular text-[17px] font-extrabold">{o.total > 0 ? amount(o.total, o.currency) : 'À confirmer'}</span>
             </Row>
             {o.payment && <Row label="Paiement choisi">{PAYMENT[o.payment] ?? o.payment}</Row>}
             <Row label="Encaissement">{o.paid_at ? `${o.paid_via ? `${PAYMENT[o.paid_via]} · ` : ''}pointé le ${dateTime(o.paid_at)}` : 'Non pointé'}</Row>
@@ -833,7 +833,7 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
                           )}
                           {paying ? (
                             <div>
-                              <p className="mb-2.5 px-1 text-[13.5px] font-semibold text-fg-dim">Paiement de {euro(o.total)} reçu par…</p>
+                              <p className="mb-2.5 px-1 text-[13.5px] font-semibold text-fg-dim">Paiement de {amount(o.total, o.currency)} reçu par…</p>
                               <div className="grid grid-cols-2 gap-2.5">
                                 {methods.map((m) => (
                                   <button key={m.id} type="button" disabled={busy !== null} onClick={() => run('paid', { paid: true, via: m.id }, `Paiement reçu par ${m.label}`)} className="press min-h-[54px] rounded-[18px] border border-line-strong bg-white/[0.06] px-3 text-[14.5px] font-bold disabled:opacity-50">
@@ -868,11 +868,11 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
                 {o.status === 'attente' && !(o.total > 0) && (
                   <p className="rounded-2xl bg-star-wash px-4 py-3 text-[13.5px] font-semibold leading-5 text-star">Le prix de cette commande reste à confirmer : aucun paiement ne peut encore être reçu.</p>
                 )}
-                {o.status === 'attente' && o.total > 0 && !paying && <PrimaryButton label="Accuser réception" trailing={euro(o.total)} disabled={busy !== null} onClick={() => setPaying(true)} />}
+                {o.status === 'attente' && o.total > 0 && !paying && <PrimaryButton label="Accuser réception" trailing={amount(o.total, o.currency)} disabled={busy !== null} onClick={() => setPaying(true)} />}
                 {o.status === 'attente' && o.total > 0 && paying && (
                   <div>
                     <p className="mb-2.5 px-1 text-[13.5px] font-semibold text-fg-dim">
-                      Accusé de réception : paiement de {euro(o.total)} vérifié, reçu par…
+                      Accusé de réception : paiement de {amount(o.total, o.currency)} vérifié, reçu par…
                       {o.unpriced > 0 && <span className="block font-medium text-star">{plural(o.unpriced, 'ligne sans prix n’est pas comprise', 'lignes sans prix ne sont pas comprises')} dans ce montant.</span>}
                     </p>
                     <div className="grid grid-cols-2 gap-2.5">

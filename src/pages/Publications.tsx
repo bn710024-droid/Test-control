@@ -50,14 +50,14 @@ const VIEW_TEXT: Record<View, { add: string; emptyTitle: string; emptyBody: stri
     add: 'Publier une vidéo',
     emptyTitle: 'Aucune vidéo',
     emptyBody: 'Publiez la première vidéo de l’équipe. Tant qu’il n’y en a pas, l’application montre ses vidéos de démonstration.',
-    where: 'Espace Publications de l’application · Favoris › Publications › Vidéos',
+    where: 'Espace Découvrir de l’application · Favoris › Découvrir',
     intro: 'Les vidéos de l’équipe. Le client les regarde, les aime et les commente : rien n’y mène à un produit. Les statistiques de chaque vidéo sont sur sa carte et dans sa fiche.',
   },
   photos: {
     add: 'Publier des photos',
     emptyTitle: 'Aucune publication photo',
     emptyBody: 'Créez la première : une à dix de vos photos, que le client fait défiler de côté, avec une description dessous.',
-    where: 'Espace Publications de l’application · Favoris › Publications › Photos',
+    where: 'Publications photo · pas encore affichées par l’application',
     intro: 'Vos propres photos, que le client fait défiler de côté, avec une description dessous. Il peut les aimer et les commenter : rien n’y mène à un produit. Les statistiques de chaque publication sont sur sa carte et dans sa fiche.',
   },
   annonces: {
