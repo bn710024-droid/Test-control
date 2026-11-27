@@ -975,7 +975,7 @@ function Provenance() {
           body={
             scope === 'examples' && !canEdit
               ? 'En mode visite, seules des commandes d’exemple peuvent s’afficher, et il n’y en a pas. Connectez-vous pour voir les commandes reçues.'
-              : 'L’application d’achat n’envoie pas encore ses commandes ici : elle les garde sur le téléphone du client. Dès qu’elle sera reliée, elles arriveront dans cet espace.'
+              : 'Aucune commande pour l’instant. Les commandes passées dans l’application reliée à cette tour arrivent ici ; l’application relit leur statut toutes les minutes.'
           }
           cta={isOwner ? 'Afficher des commandes d’exemple' : undefined}
           onPress={isOwner && !busy ? () => run(seedExamples, 'Commandes d’exemple ajoutées') : undefined}

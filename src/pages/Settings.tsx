@@ -4,8 +4,6 @@ import {
   airplaneOutline,
   boatOutline,
   checkmarkCircle,
-  copyOutline,
-  eyeOutline,
   cubeOutline,
   keyOutline,
   linkOutline,
@@ -151,7 +149,8 @@ export default function Settings() {
   );
 
   // ───── Publication
-  const endpoint = `${window.location.origin}/api/catalog`;
+  // Adresse lue par l'application (format de l'application, schema 2). Sans `?v=2` : format historique.
+  const endpoint = `${window.location.origin}/api/catalog?v=2`;
   const [report, setReport] = useState<Report>({ state: 'idle' });
   const [linking, setLinking] = useState(false);
 
@@ -408,20 +407,19 @@ export default function Settings() {
                 <div className="mt-3 rounded-2xl bg-black/25 p-3.5">
                   <p className="text-[14.5px] font-bold leading-5">Brancher l’application mobile</p>
                   <p className="mt-1 text-[13px] leading-[19px] text-fg-dim">
-                    L’application est un projet à part : elle ne change que lorsqu’on y applique ce correctif et qu’on la republie. Il a été préparé sur le dépôt public de l’application (commit 448f833) : si elle a changé depuis, il est à refaire sur son code à jour. Ensuite, produits, prix, rayons,
-                    publications, commandes et statuts s’y répercutent seuls, en une minute au plus. Il contient aussi le filtre des produits par pays et, au Sénégal, la demande de localisation à la confirmation du panier.
+                    L’application est un projet à part. Elle se relie à cette tour par une seule adresse, la variable{' '}
+                    <code className="text-fg">EXPO_PUBLIC_CONTROL_TOWER_URL</code>. Ensuite, produits, prix, emballages, rayons, annonces, vidéos,
+                    commandes, demandes et statuts s’y répercutent seuls, en une minute au plus. L’ancien correctif (git apply) ne s’applique plus
+                    à l’application actuelle : ne l’utilisez pas.
                   </p>
                   <ol className="mt-2.5 list-decimal space-y-1 pl-5 text-[13px] leading-[19px] text-fg-dim">
-                    <li>Télécharger le correctif et le placer dans le dossier de l’application.</li>
                     <li>
-                      Lancer <code className="text-fg">git apply app-tropicaura.patch</code>.
+                      Dans l’application, définir <code className="text-fg">EXPO_PUBLIC_CONTROL_TOWER_URL={window.location.origin}</code> (fichier
+                      .env.local, variables Vercel pour le web, eas.json pour les téléphones).
                     </li>
                     <li>Republier l’application.</li>
                   </ol>
                   <div className="mt-3 flex flex-wrap gap-2.5">
-                    <a href="/branchement/app-tropicaura.patch" download className="press flex min-h-11 items-center rounded-full bg-leaf px-4 text-[13.5px] font-extrabold text-on-leaf">
-                      Télécharger le correctif
-                    </a>
                     <a href="/branchement/LISEZ-MOI.txt" target="_blank" rel="noreferrer noopener" className="press flex min-h-11 items-center rounded-full border border-line-strong px-4 text-[13.5px] font-bold">
                       Lire les instructions
                     </a>
@@ -429,7 +427,7 @@ export default function Settings() {
                       compact
                       label="Copier la consigne"
                       onClick={async () => {
-                        const text = `Applique au dépôt de l’application TROPICAURA le correctif ${window.location.origin}/branchement/app-tropicaura.patch (git apply), en suivant ${window.location.origin}/branchement/LISEZ-MOI.txt. Vérifie que CONTROL_TOWER vaut ${window.location.origin} dans lib/config.ts, lance npx tsc --noEmit, puis republie l’application.`;
+                        const text = `Dans le dépôt de l’application TROPICAURA, définis EXPO_PUBLIC_CONTROL_TOWER_URL=${window.location.origin} (fichier .env.local en local, variables d’environnement Vercel pour le web, eas.json pour iOS et Android), lance npx tsc --noEmit, puis republie l’application. N’applique pas l’ancien correctif app-tropicaura.patch.`;
                         try {
                           await navigator.clipboard.writeText(text);
                           toast('Consigne copiée : collez-la dans le projet de l’application');

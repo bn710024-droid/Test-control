@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { add, airplaneOutline, boatOutline, heart, imageOutline, leaf } from '../lib/glyphs';
+import { add } from '../lib/glyphs';
 import { Icon } from './Icon';
 import { Chip, Switch } from './ui';
 import { useData, type Category, type Product } from '../contexts/DataContext';

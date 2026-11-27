@@ -1,3 +1,35 @@
+TROPICAURA — branchement de l'application sur la tour de contrôle
+==================================================================
+
+MISE À JOUR DU 27/11/2026 — À LIRE D'ABORD
+------------------------------------------
+Le correctif app-tropicaura.patch ci-dessous visait un ancien commit (448f833) :
+il NE S'APPLIQUE PLUS à l'application actuelle. Ne pas l'utiliser.
+
+L'application actuelle se relie à la tour par UNE adresse :
+  EXPO_PUBLIC_CONTROL_TOWER_URL=https://<adresse-de-la-tour>
+  - en local : fichier .env.local de l'application ;
+  - web (Vercel) : variable d'environnement du projet de l'application ;
+  - iOS / Android : bloc "env" du profil dans eas.json.
+Puis republier l'application.
+
+Ce qu'elle lit et envoie :
+  - GET  <tour>/api/catalog?v=2 : catalogue AU FORMAT DE L'APPLICATION (schema 2) —
+    produits, prix et prix par pays, emballages (formats) et leurs réglages par pays,
+    visibilité, rayons, filtres, annonces, moyens de paiement, message « introuvable ».
+    Relu à l'ouverture, toutes les 60 s, au retour au premier plan.
+  - POST <tour>/api/orders : commandes des particuliers, demandes professionnelles,
+    produits introuvables (file d'attente sur l'appareil + renvoi si échec).
+  - GET  <tour>/api/orders?compte=<id> : statuts réglés par l'équipe (toutes les 60 s).
+  - GET  <tour>/api/publications?public=videos et POST ?public=reactions (vues, J'aime,
+    commentaires — sans le nom du compte pour l'instant).
+Pas encore lu par l'application : publications photo, annonces « image seule » sans
+produit, livraison GP par pays (la tour n'a pas encore de liste de pays GP).
+
+==================================================================
+ANCIENNE NOTICE (correctif obsolète, gardée pour mémoire)
+==================================================================
+
 TROPICAURA — branchement de l'application mobile sur la tour de contrôle
 =========================================================================
 

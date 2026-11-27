@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { eyeOffOutline, eyeOutline, lockClosedOutline, logoGoogle } from '../lib/glyphs';
+import { lockClosedOutline, logoGoogle } from '../lib/glyphs';
 import supabase, { configured } from '../lib/supabase';
 import { googleAvailable, signInWithGoogle } from '../lib/googleAuth';
 import { useAuth } from '../contexts/AuthContext';

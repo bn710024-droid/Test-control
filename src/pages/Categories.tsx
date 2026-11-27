@@ -232,13 +232,13 @@ export default function Categories() {
 
             <div className="mx-5 mt-5">
               <Notice tone="star" icon={informationCircleOutline} title="Ce que l’application lit vraiment">
-                Les noms, l’ordre et les illustrations des rayons sont écrits dans le code de l’application d’achat (lib/data.ts et
-                screens/HomeScreen.tsx). Vos réglages sont enregistrés et publiés dans le catalogue, mais l’application actuelle ne les lit
-                pas : ils s’afficheront après une mise à jour de l’application.
+                L’application reliée (catalogue <code>?v=2</code>) lit le nom et l’ordre des rayons publiés ici, et la photo d’un rayon
+                quand vous en téléversez une ; sans photo, elle garde son illustration. Un rayon créé ici y apparaît dès qu’un produit
+                y est rangé, dans l’ordre choisi.
                 {known && (
                   <>
                     {' '}
-                    Rayons connus aujourd’hui : {known.join(', ')}. Un produit rangé dans un autre rayon y apparaît sous « Fruits ».
+                    Sans tour (hors connexion, première ouverture), l’application affiche ses rayons d’origine : {known.join(', ')}.
                   </>
                 )}
               </Notice>

@@ -531,12 +531,12 @@ export default function Publications() {
 
       {!loading && !error && (
         <div className="mx-5 mt-5">
-          <Notice tone={view === 'annonces' ? 'neutral' : 'star'} title={view === 'annonces' ? 'Annonces dans l’application' : 'Dans l’application : appliquez le correctif'}>
+          <Notice tone={view === 'annonces' ? 'neutral' : 'star'} title={view === 'annonces' ? 'Annonces dans l’application' : 'Dans l’application'}>
             {view === 'annonces'
-              ? 'Seules les annonces en cours sont envoyées, avec leur date de fin ; sans annonce en cours, pas de bandeau. Les annonces faites de votre image demandent le correctif ci-dessous : sans lui, l’application ne dessine que le modèle.'
+              ? 'Seules les annonces en cours sont envoyées, avec leur date de fin ; sans annonce en cours, pas de bandeau. L’application les relit toutes les minutes. Une annonce faite de votre image s’affiche en fond du bandeau, avec le bouton vers son produit ; une image sans produit n’est pas encore affichée par l’application.'
               : view === 'photos'
-                ? 'Le correctif ajoute ces publications à l’application (Favoris › Publications › Photos) et y fait remonter les vues, les J’aime et les commentaires. Tant qu’il n’est pas appliqué à votre version de l’application, elle ne les affiche pas et aucune statistique n’arrive.'
-                : 'Avec le correctif, l’application lit ces vidéos (Favoris › Publications › Vidéos) et fait remonter ici les vues, les J’aime et les commentaires. Sans lui, elle montre ses vidéos de démonstration et aucune statistique n’arrive.'}
+                ? 'L’application n’affiche pas encore les publications photo : l’écran reste à ajouter. Elles sont enregistrées et publiées ici, prêtes pour cette mise à jour.'
+                : 'L’application reliée lit ces vidéos (Favoris › Découvrir) et envoie ici les vues, les J’aime et les commentaires, sans le nom du compte pour l’instant.'}
             <span className="mt-2.5 flex items-center gap-2 rounded-2xl border border-line bg-black/25 p-1.5 pl-3.5">
               <code className="min-w-0 flex-1 truncate text-[12.5px] text-fg">{address}</code>
               <button type="button" onClick={() => copy(address)} className="press grid h-11 shrink-0 place-items-center rounded-full bg-surface-strong px-4 text-[13px] font-bold text-fg">
@@ -545,9 +545,6 @@ export default function Publications() {
             </span>
             {(
               <span className="mt-2.5 flex flex-wrap gap-2.5">
-                <a href="/branchement/app-tropicaura.patch" download className="press flex min-h-11 items-center rounded-full bg-leaf px-4 text-[13.5px] font-extrabold text-on-leaf">
-                  Télécharger le correctif
-                </a>
                 <a href="/branchement/LISEZ-MOI.txt" target="_blank" rel="noreferrer noopener" className="press flex min-h-11 items-center rounded-full border border-line-strong px-4 text-[13.5px] font-bold text-fg">
                   Lire les instructions
                 </a>

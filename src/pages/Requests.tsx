@@ -222,12 +222,9 @@ export default function Requests() {
 
       {!loading && !error && (
         <div className="mx-5 mt-6">
-          <Notice tone="star" title="Dans l’application : appliquez le correctif">
-            Le correctif ajoute ce message à la recherche de l’application et envoie ici la demande du client. Tant qu’il n’est pas appliqué à votre version de l’application, elle n’affiche pas ce message et aucune demande n’arrive.
+          <Notice tone="star" title="Dans l’application">
+            L’application reliée à cette tour affiche ce message quand une recherche ne donne rien dans tout le catalogue, et envoie ici la demande du client, avec le pays de son compte.
             <span className="mt-2.5 flex flex-wrap gap-2.5">
-              <a href="/branchement/app-tropicaura.patch" download className="press flex min-h-11 items-center rounded-full bg-leaf px-4 text-[13.5px] font-extrabold text-on-leaf">
-                Télécharger le correctif
-              </a>
               <a href="/branchement/LISEZ-MOI.txt" target="_blank" rel="noreferrer noopener" className="press flex min-h-11 items-center rounded-full border border-line-strong px-4 text-[13.5px] font-bold text-fg">
                 Lire les instructions
               </a>
