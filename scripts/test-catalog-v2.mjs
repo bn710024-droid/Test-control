@@ -94,6 +94,7 @@ test('format : grammes, prix entier, devise, nom, règles', () => {
   assert.equal(s.price, 3.2);
   assert.equal(s.currency, 'EUR');
   assert.deepEqual(s.noun, ['sachet', 'sachets']);
+  assert.equal(s.unitLabel.replace(/\s/g, ' '), 'par sachet de 500 g');
   assert.deepEqual([s.step, s.min, s.max], [1, 1, 10]);
   assert.deepEqual(s.photo, { url: 'https://x/s.webp' });
   assert.equal(s.description, 'Refermable');
@@ -103,6 +104,7 @@ test('format : prix null conservé (« à compléter »), kg → grammes, max ab
   const c = mangue.formats[1];
   assert.equal(c.price, null);
   assert.equal(c.grams, 4000);
+  assert.equal(c.unitLabel.replace(/\s/g, ' '), 'par carton de 4 kg');
   assert.equal('max' in c, false);
   assert.equal('photo' in c, false);
   assert.deepEqual([c.step, c.min], [2, 2]);

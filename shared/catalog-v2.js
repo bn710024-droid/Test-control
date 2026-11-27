@@ -14,7 +14,7 @@
  * Fonction pure : elle part du document v1 déjà calculé par `buildDocument` (avec ou sans pays),
  * sans relire la base.
  */
-import { packRange } from './catalog.js';
+import { packContent, packRange } from './catalog.js';
 
 export const SCHEMA_V2 = 2;
 
@@ -84,6 +84,9 @@ export function formatOf(pack) {
     price: typeof pack.price === 'number' && pack.price > 0 ? pack.price : null,
     currency: DEFAULT_CURRENCY,
     noun: nounOf(pack.label),
+    // Libellé d'unité neutre (« par cagette de 5 kg ») : l'application ne devine plus l'article
+    // (« le cagette ») et le contenu s'affiche en kg au-delà du kilo.
+    unitLabel: `par ${nounOf(pack.label)[0]}${packContent(pack) ? ` de ${packContent(pack)}` : ''}`,
     step: range.step,
     min: range.min,
     ...(range.max !== null ? { max: range.max } : null),
