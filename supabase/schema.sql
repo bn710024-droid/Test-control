@@ -107,6 +107,33 @@ create table if not exists rate_hits (
 create index if not exists rate_hits_key_at on rate_hits (key, at);
 alter table rate_hits enable row level security;
 
+-- Produits introuvables : un client a cherché un produit absent du catalogue (api/orders.js,
+-- `type: 'produit_introuvable'`). `enc` : la demande entière, chiffrée par le serveur (AES-256-GCM).
+create table if not exists product_requests (
+  id text primary key,
+  received_at timestamptz not null default now(),
+  enc text not null
+);
+alter table product_requests enable row level security;
+
+-- Vues, J'aime et commentaires des vidéos et publications photo (api/publications.js,
+-- `?public=reactions`). Une ligne par geste ; aucun e-mail ni téléphone.
+create table if not exists publication_reactions (
+  id bigserial primary key,
+  publication_id text not null,
+  kind text not null,             -- 'view' | 'like' | 'comment'
+  account_id text not null,
+  account_name text default '',
+  account_type text default 'particulier',
+  body text default '',           -- texte du commentaire
+  client_id text default '',      -- identifiant du commentaire côté application
+  at timestamptz default now(),
+  created_at timestamptz not null default now()
+);
+create index if not exists publication_reactions_account on publication_reactions (account_id);
+create index if not exists publication_reactions_pub on publication_reactions (publication_id);
+alter table publication_reactions enable row level security;
+
 -- ───────────── Sécurité par ligne — À EXÉCUTER À LA MAIN avant une mise en production.
 -- Sans politique, seule la clé de service (routes /api) accède aux tables.
 alter table categories enable row level security;

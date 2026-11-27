@@ -18,7 +18,7 @@ const STORAGE = path.join(ROOT, 'storage');
 const PUBLIC_BASE = process.env.TOWER_LOCAL_URL || 'http://localhost:3000';
 
 const KEYS = { settings: 'key', seals: 'ref' };
-const SERIAL = new Set(['journal', 'rate_hits']);
+const SERIAL = new Set(['journal', 'rate_hits', 'publication_reactions']);
 const keyOf = (table) => KEYS[table] || 'id';
 
 let tables = {};
@@ -137,12 +137,12 @@ class Query {
       out.id = (ids.length ? Math.max(...ids) : 0) + 1;
     }
     if (isNew) {
-      if (this.table === 'orders' && out.received_at === undefined) out.received_at = now;
+      if ((this.table === 'orders' || this.table === 'product_requests') && out.received_at === undefined) out.received_at = now;
       if (this.table === 'rate_hits' && out.at === undefined) out.at = now;
       if (this.table === 'journal' && out.at === undefined) out.at = now;
       if (this.table === 'seals' && out.sealed_at === undefined) out.sealed_at = now;
-      if (!['orders', 'rate_hits', 'journal', 'seals', 'settings', 'packagings', 'zones'].includes(this.table) && out.created_at === undefined) out.created_at = now;
-      if (!['rate_hits', 'journal', 'seals'].includes(this.table) && out.updated_at === undefined && this.table !== 'orders') out.updated_at = now;
+      if (!['orders', 'product_requests', 'rate_hits', 'journal', 'seals', 'settings', 'packagings', 'zones'].includes(this.table) && out.created_at === undefined) out.created_at = now;
+      if (!['rate_hits', 'journal', 'seals', 'orders', 'product_requests', 'publication_reactions'].includes(this.table) && out.updated_at === undefined) out.updated_at = now;
     }
     return out;
   }
