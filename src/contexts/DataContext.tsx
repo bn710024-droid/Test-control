@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RequestMessage } from '../../shared/requests.js';
+import { embeddedAssetsOf } from '../../shared/assets.js';
 import { ApiError, api, messageOf } from '../lib/api';
 import { useAuth } from './AuthContext';
 import { blobToBase64 } from '../lib/image';
@@ -145,11 +146,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [reload]);
 
-  const embedded = settings?.compat?.embeddedAssets;
+  // Photos connues : celles de l'application et celles fournies avec la tour (base neuve comprise).
+  const embedded = useMemo(() => embeddedAssetsOf(settings?.compat), [settings?.compat]);
   const photoOf = useCallback<DataValue['photoOf']>(
     (p, size = 'thumb') => {
       if (p.photo_url) return p.photo_url;
-      if (p.photo_asset && embedded?.includes(p.photo_asset)) {
+      if (p.photo_asset && embedded.includes(p.photo_asset)) {
         return size === 'thumb' ? `/produce/thumb/${p.photo_asset}.webp` : `/produce/${p.photo_asset}.webp`;
       }
       return null;
@@ -190,11 +192,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const issuesOf = useCallback(
     (p: Product) =>
       completeness(p, {
-        embeddedAssets: settings?.compat?.embeddedAssets ?? [],
+        embeddedAssets: embedded,
         appCategoryIds: settings?.compat?.categoryIds,
         rules: settings?.rules,
       }),
-    [settings],
+    [settings, embedded],
   );
 
   const categoryLabel = useCallback(

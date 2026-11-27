@@ -22,6 +22,7 @@ import { useData, type Product } from '../contexts/DataContext';
 import { useToast } from '../contexts/ToastContext';
 import { Icon } from '../components/Icon';
 import { CardPreview, CategoryRound, ProductArt, SeasonStrip } from '../components/catalog';
+import { embeddedAssetsOf } from '../../shared/assets.js';
 import { OfferCard } from '../components/OfferCard';
 import { NewCategorySheet } from '../components/NewCategorySheet';
 import { ZonePicker } from '../components/ZonePicker';
@@ -422,7 +423,7 @@ function Editor({ product }: { product: Product | null }) {
   };
 
   // ───── Affichage
-  const embedded = settings?.compat?.embeddedAssets ?? [];
+  const embedded = embeddedAssetsOf(settings?.compat);
   const hasEmbedded = !!form.photo_asset && embedded.includes(form.photo_asset);
   const shownSrc = pending ? pending.previewUrl : photoOf(form, 'full');
   const shownRatio = pending ? pending.ratio : form.photo_ratio;
