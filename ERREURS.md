@@ -1,17 +1,20 @@
 # ERREURS — ce qui reste à corriger (tour de contrôle)
 
-## Résumé de la nuit (27/11/2026, branche `nuit-branchement` des deux dépôts)
+## État au 27/11/2026, soir (branche `nuit-branchement`, en ligne)
 
-1. L'app lit la tour (`?v=2`, format de l'app) : prix, masquage, emballages, prix par pays, rayons, annonces, GP — visibles en ≤ 60 s sans recharger.
-2. Commandes, demandes pro, introuvables et réactions vidéo partent vers la tour ; statuts relus toutes les 60 s ; file locale + renvoi après coupure.
-3. Testé de bout en bout contre une tour LOCALE (base simulée, pas de clés Supabase sur le poste) : `test_tower_live.py` 36/36.
-4. Non-régression : `test_app.py` 63/63 ; `tsc` 0 erreur ; lint 0 erreur des deux côtés ; `expo export` et `npm run build` OK.
-5. Relevé automatique ~90 écrans et gestes (390×844, 1440×900) : 0 erreur console / page / réseau.
-6. Textes devenus faux corrigés (tour : « appliquez le correctif », adresse `?v=2`… ; app : « aucune commande transmise »…).
-7. Tour : pays GP, montants dans leur devise (F CFA), devises jamais additionnées dans les statistiques, `npm run local`.
-8. Non fait (décision de design) : publications photo, messages de suivi affichés, photos d'emballage. (Contenus en kg dès 1 000 g : corrigé le 27/11 au matin.)
-9. À configurer par toi (`A-CONNECTER.md`) : variables Supabase de la tour, `EXPO_PUBLIC_CONTROL_TOWER_URL`, identité EAS.
-10. Non testé : téléphone, vraie base Supabase, déploiement Vercel. Aucun style ni animation modifié (quai, carrousel, emballages intacts) ; seul ajout visuel : la carte « Produit introuvable » demandée.
+- **En ligne** : app https://tropicaura-app.vercel.app · tour https://tropicaura-tour.vercel.app ·
+  vraie base Supabase. Les deux PR `nuit-branchement → main` restent ouvertes, non fusionnées.
+- **Tests en ligne** (`app/scripts/online/`) : t1 tour → app 80/80 · t2 app → tour + statuts 42/42 ·
+  t4 images 20/20 (0 image en 404, 0 image vide) · t5 forfait transport 8/8 · t3 boutons : 954 clics,
+  0 erreur. Hors ligne : `test_app.py` 63/63, `tsc` 0 erreur, `npm run build` OK, tests unitaires
+  des deux côtés au vert.
+- **Corrigé aujourd'hui** : images de la tour revenues ; annonces « toucher » et « image seule » ;
+  libellés des étapes pro ; moyens de paiement réglables ; publications photo dans l'app ; cause du
+  raté de statut (la position du client écrasait le statut) ; photos des emballages ; forfaits de
+  transport réglables dans la tour ; identifiant de compte aléatoire.
+- **À faire par l'équipe** : saisir les vrais forfaits de transport (Réglages › Transport) ; ajouter
+  les contenus manquants des emballages (tour n° 3).
+- **Encore ouvert** (décisions de design ou de produit) : app n° 4, 8, 9 ; tour n° 2, 4, 8.
 
 Format : écran · étapes pour reproduire · cause probable · correctif proposé. Ce qui a été corrigé
 cette nuit est dans `BUGS.md`.
@@ -22,10 +25,9 @@ Relevé automatique (13 pages + 17 gestes à 1440×900, base locale) : **0 erreu
 
 ---
 
-### 1. Annonce « image seule » sans produit non affichée par l'application
-- **Écran** : Publications › Annonces, lien « Aucun ».
-- **Cause** : l'application exige un produit par annonce ; `?v=2` les écarte.
-- **Correctif** : côté application, accepter une annonce sans produit (image, toucher sans effet).
+### 1. ~~Annonce « image seule » sans produit non affichée par l'application~~ — corrigé
+- **Corrigé** (27/11, `672805f` + app `473551c`) : `?v=2` publie l'annonce `link: 'none'` avec
+  `id: null` ; l'application l'affiche en image seule, sans effet au toucher. Test en ligne t1.
 
 ### 2. Pas de visibilité « ce pays uniquement » pour un emballage
 - **Écran** : Produit › Emballages › réglages par pays.
@@ -50,13 +52,13 @@ Relevé automatique (13 pages + 17 gestes à 1440×900, base locale) : **0 erreu
   passés en avertissement plutôt que réécrire les effets cette nuit.
 
 ### 6. Sécurité (volontairement inchangé — phase de test)
-- `OPEN_ACCESS = true`, CORS `*`, réception des commandes non authentifiée, RLS à activer
-  (voir `supabase/schema.sql` et `A-CONNECTER.md` de l'application).
+- `OPEN_ACCESS = true`, CORS `*`, réception des commandes non authentifiée. RLS active sur la vraie
+  base (accès réservé au rôle serveur) ; à durcir avant l'ouverture au public.
 
-### 7. Moyens de paiement non réglables dans la tour
-- **Constat** : Orange Money, Wave, virement, carte sont écrits dans `api/catalog.js` ; aucun écran
-  de la tour ne les modifie (test en ligne : les 4 s'affichent bien dans l'application).
-- **Correctif proposé** : un réglage `settings.payments` (liste, ordre, activé) publié dans `?v=2`.
+### 7. ~~Moyens de paiement non réglables dans la tour~~ — corrigé
+- **Corrigé** (27/11, `672805f`) : Réglages › « Moyens de paiement », un interrupteur par moyen
+  (mêmes `Block` et `Switch` que les autres réglages), au moins un reste activé ; publié dans
+  `payments`. Test en ligne t2 : virement désactivé → absent de l'application.
 
 ### 8. Photos remplacées ou retirées : le fichier reste dans le stockage
 - **Reproduire** : envoyer une photo de produit, de rayon ou de filtre, puis la retirer → le
@@ -67,3 +69,21 @@ Relevé automatique (13 pages + 17 gestes à 1440×900, base locale) : **0 erreu
 
 ### 9. ~~Vidéo publiée servie avec retard (cache 15 s + 60 s)~~ — corrigé
 - Cache de `?public=videos` et `?public=photos` ramené à 5 s + 5 s, comme le catalogue.
+
+### 10. ~~Images disparues de la tour en ligne (produits, rayons, filtres)~~ — corrigé
+- **Cause** : sur la nouvelle base, `compat.embeddedAssets` (liste des photos embarquées) était vide :
+  la tour affichait « Sans photo » partout.
+- **Corrigé** (27/11, `31c9685`) : liste des photos de la tour dans `shared/assets.js` ; 4 photos
+  ajoutées (mangue séchée, ananas séché, baobab, bissap, reprises de l'application en webp).
+  Test en ligne t4 : 0 image en 404, 0 image vide.
+
+### 11. ~~Statut d'une commande perdu (raté isolé, 1 sur 14)~~ — cause trouvée, corrigé
+- **Cause** : `trackPosition` (position envoyée par l'application) relisait toutes les commandes puis
+  réécrivait la commande chiffrée entière : un statut changé par l'équipe entre-temps était effacé.
+- **Corrigé** (27/11, `a7d4899`) : écritures conditionnelles sur l'empreinte du bloc chiffré
+  (`shared/stamp.js`). Un conflit avec un autre membre de l'équipe répond 409 « rechargez ».
+
+### 12. Forfaits de transport (nouveau réglage)
+- Réglages › « Transport des particuliers » : un forfait en euros par zone, publié dans `?v=2`
+  (`transport`) une fois enregistré ; `value: null` le retire. **À saisir par l'équipe** : le bloc
+  affiche le barème d'exemple de l'application tant qu'il n'est pas enregistré.
