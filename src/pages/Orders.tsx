@@ -42,6 +42,11 @@ const placeOf = (o: Order) => o.country || o.address || 'Adresse non renseignée
 const destinationOf = (o: Order) => (o.country && o.address.includes(o.country) ? o.address : [o.address, o.country].filter(Boolean).join(', '));
 /** Une commande annulée ne compte dans aucun montant. */
 const counted = (o: Order) => o.status !== 'annulee';
+// Devises jamais additionnées : les montants en euros ne comptent que les commandes en euros.
+const isEuro = (o: Order) => !o.currency || o.currency.toUpperCase() === 'EUR';
+const euroTotal = (o: Order) => (isEuro(o) ? o.total : 0);
+/** « · 2 commandes en F CFA non comptées » : ce que les montants en euros laissent de côté. */
+const otherCurrencyNote = (n: number) => (n > 0 ? ` ${n} ${n > 1 ? 'commandes' : 'commande'} dans une autre devise, non ${n > 1 ? 'comptées' : 'comptée'}.` : '');
 const amountText = (o: Order) => (o.total > 0 ? `${amount(o.total, o.currency)}${o.unpriced > 0 ? ' +' : ''}` : 'À confirmer');
 const nameInitials = (name: string) => {
   const parts = name.replace(/\(.*?\)/g, '').trim().split(/\s+/).filter(Boolean);
@@ -227,9 +232,9 @@ function useScope() {
 
 function sums(list: Order[]) {
   const live = list.filter(counted);
-  const ordered = live.reduce((s, o) => s + o.total, 0);
-  const paid = live.filter((o) => o.paid_at).reduce((s, o) => s + o.total, 0);
-  return { live, ordered, paid, due: ordered - paid };
+  const ordered = live.reduce((s, o) => s + euroTotal(o), 0);
+  const paid = live.filter((o) => o.paid_at).reduce((s, o) => s + euroTotal(o), 0);
+  return { live, ordered, paid, due: ordered - paid, other: live.filter((o) => !isEuro(o)).length };
 }
 
 // ───────────── Briques de la page « Livraison » : titres de groupe, listes groupées, lignes
@@ -1075,7 +1080,7 @@ export function OrdersList() {
       <div className="mx-5 mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="À traiter" value={count(waiting)} tone={waiting > 0 ? 'star' : undefined} detail="Paiement attendu, ou professionnel à contacter." />
         <Kpi label="En cours" value={count(running)} detail="Confirmées, en préparation ou expédiées." />
-        <Kpi label="Montant commandé" value={money(s.ordered)} detail="Hors commandes annulées." />
+        <Kpi label="Montant commandé" value={money(s.ordered)} detail={`Hors commandes annulées.${otherCurrencyNote(s.other)}`} />
         <Kpi label="Encaissé" value={money(s.paid)} tone="leaf" detail={s.due > 0 ? `Reste ${money(s.due)} à encaisser.` : 'Rien à encaisser.'} />
       </div>
 
@@ -1395,8 +1400,8 @@ export function OrdersClients() {
       c.orders.push(o);
       if (o.created_at > c.latest.created_at) c.latest = o;
       if (counted(o)) {
-        c.ordered += o.total;
-        if (o.paid_at) c.paid += o.total;
+        c.ordered += euroTotal(o);
+        if (o.paid_at) c.paid += euroTotal(o);
       }
       map.set(key, c);
     }
@@ -1522,7 +1527,7 @@ export function OrdersStats() {
     const s = sums(scoped);
     const retail = s.live.filter((o) => o.type === 'particulier');
     const pro = s.live.filter((o) => o.type === 'pro');
-    const total = (rows: Order[]) => rows.reduce((sum, o) => sum + o.total, 0);
+    const total = (rows: Order[]) => rows.reduce((sum, o) => sum + euroTotal(o), 0);
 
     // Montant par jour, du plus ancien au plus récent.
     const start = new Date();
@@ -1540,7 +1545,7 @@ export function OrdersStats() {
     for (const o of s.live) {
       for (const l of o.lines) {
         const p = products.get(l.name) ?? { name: l.name, amount: 0, orders: 0 };
-        p.amount += l.total ?? 0;
+        p.amount += isEuro(o) ? (l.total ?? 0) : 0;
         p.orders += 1;
         products.set(l.name, p);
       }
@@ -1552,7 +1557,7 @@ export function OrdersStats() {
       scoped,
       ...s,
       clients: new Set(s.live.map(customerKey)).size,
-      basket: retail.length > 0 ? total(retail) / retail.length : 0,
+      basket: retail.some(isEuro) ? total(retail) / retail.filter(isEuro).length : 0,
       retail: { n: retail.length, amount: total(retail) },
       pro: { n: pro.length, amount: total(pro) },
       byDay,
@@ -1585,7 +1590,7 @@ export function OrdersStats() {
 
       <div className="mx-5 mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Kpi label="Commandes" value={count(data.live.length)} detail={`${plural(data.clients, 'client', 'clients')} différents.`} />
-        <Kpi label="Montant commandé" value={money(data.ordered)} detail={data.unpriced > 0 ? `${plural(data.unpriced, 'demande a', 'demandes ont')} des prix à confirmer, non comptés.` : 'Lignes chiffrées uniquement.'} />
+        <Kpi label="Montant commandé" value={money(data.ordered)} detail={`${data.unpriced > 0 ? `${plural(data.unpriced, 'demande a', 'demandes ont')} des prix à confirmer, non comptés.` : 'Lignes chiffrées uniquement.'}${otherCurrencyNote(data.other)}`} />
         <Kpi label="Encaissé" value={money(data.paid)} tone="leaf" detail="Pointé à la main par l’équipe." />
         <Kpi label="À encaisser" value={money(data.due)} tone={data.due > 0 ? 'star' : undefined} detail="Commandé, pas encore pointé." />
         <Kpi label="Panier moyen" value={data.retail.n > 0 ? money(data.basket) : '—'} detail="Commandes des particuliers." />
