@@ -4,6 +4,7 @@ import { buildDocument, DEFAULT_RULES, zoneOf, isCountryCode } from '../shared/c
 import { requestMessageOf } from '../shared/requests.js';
 import { annonceState } from '../shared/orders.js';
 import { toAppDocument } from '../shared/catalog-v2.js';
+import { publishedPayments } from '../shared/payments.js';
 
 /**
  * Catalogue publié — lecture publique, sans authentification.
@@ -24,7 +25,7 @@ export default async function handler(req, res) {
     const [products, categories, settings, seals] = await Promise.all([
       supabase.from('products').select('*').eq('archived', false).order('sort_order', { ascending: true }),
       supabase.from('categories').select('*').order('sort_order', { ascending: true }),
-      supabase.from('settings').select('*').in('key', ['rules', AUDIENCE_KEY, 'filters', 'missing', 'gp']),
+      supabase.from('settings').select('*').in('key', ['rules', AUDIENCE_KEY, 'filters', 'missing', 'gp', 'payments']),
       loadSeals(),
     ]);
     const annonces = await supabase.from('publications').select('*').eq('kind', 'annonce').eq('published', true).order('sort_order', { ascending: true });
@@ -121,13 +122,11 @@ export default async function handler(req, res) {
     // confirmation qu'il lit après l'envoi. `enabled: false` : l'application ne propose rien.
     const missingRow = settings.data.find((r) => r.key === 'missing') ?? null;
     doc.productRequest = requestMessageOf(missingRow && stateOf('settings', missingRow, seals) === 'ok' ? missingRow.value : null);
-    // Moyens de paiement des particuliers. Orange Money et Wave : surtout au Sénégal.
-    doc.payments = [
-      { id: 'orange_money', title: 'Orange Money', detail: 'Surtout au Sénégal', icon: 'phone-portrait-outline' },
-      { id: 'wave', title: 'Wave', detail: 'Surtout au Sénégal', icon: 'phone-portrait-outline' },
-      { id: 'virement', title: 'Virement bancaire', detail: 'Depuis l’étranger', icon: 'business-outline' },
-      { id: 'carte', title: 'Carte bancaire', detail: 'Partout', icon: 'card-outline' },
-    ];
+    // Moyens de paiement des particuliers, réglés dans Réglages › Moyens de paiement : seuls les
+    // moyens activés sont publiés (réglage absent ou non validé : les quatre).
+    const paymentsRow = settings.data.find((r) => r.key === 'payments') ?? null;
+    const paymentsOk = !!paymentsRow && stateOf('settings', paymentsRow, seals) === 'ok';
+    doc.payments = publishedPayments(paymentsOk ? paymentsRow.value : null);
     // Cache court : une annonce activée, désactivée ou arrivée à son terme se voit en quelques secondes.
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');
     if (String(req.query?.v ?? '') === '2') {

@@ -123,9 +123,10 @@ test('format en pièces : unit, détail, pas de grammes', () => {
   assert.equal(b.detail, '6 pièces');
   assert.deepEqual(b.noun, ['box', 'box']);
 });
-test('annonces : sans produit écartée, image et bouton', () => {
-  assert.deepEqual(doc.campaigns.map((c) => c.id), ['mangue', 'ananas']);
-  const b = doc.campaigns[1];
+test('annonces : image seule gardée sans produit, image et bouton', () => {
+  assert.deepEqual(doc.campaigns.map((c) => c.id), ['mangue', null, 'ananas']);
+  assert.equal(doc.campaigns[1].link, 'none');
+  const b = doc.campaigns[2];
   assert.deepEqual(b.photo, { url: 'https://x/b.webp' });
   assert.equal(b.cta, 'Voir');
   assert.equal(b.enabled, true);
@@ -153,6 +154,19 @@ test('utilitaires', () => {
   assert.deepEqual(nounOf('Carton de 4 kg'), ['carton', 'cartons']);
   assert.equal(formatOf({ id: 'x', label: 'X', qty: 1, unit: 'kg', price: 0, step: 1 }).price, null);
   assert.deepEqual(campaignsOf(undefined), []);
+});
+test('annonces : bouton, toucher l’image, image seule sans produit', () => {
+  const [btn, tap, none, bad] = [
+    { key: 'a1', id: 'mangue', accent: '', body: '', imageUrl: 'https://x/a.png', link: 'button', buttonLabel: 'Voir' },
+    { key: 'a2', id: 'poire', accent: '', body: '', imageUrl: 'https://x/b.png', link: 'tap', buttonLabel: null },
+    { key: 'a3', id: null, accent: '', body: '', imageUrl: 'https://x/c.png', link: 'none', buttonLabel: null },
+    { key: 'a4', id: null, accent: 'x', body: 'y', imageUrl: null, link: 'button' },
+  ];
+  const out = campaignsOf([btn, tap, none, bad]);
+  assert.equal(out.length, 3, 'le modèle sans produit est écarté, l’image seule est gardée');
+  assert.deepEqual([out[0].link, out[0].cta], ['button', 'Voir']);
+  assert.deepEqual([out[1].link, out[1].id, 'cta' in out[1]], ['tap', 'poire', false]);
+  assert.deepEqual([out[2].link, out[2].id, out[2].photo], ['none', null, { url: 'https://x/c.png' }]);
 });
 
 console.log(`\n${passed} vérifications, 0 échec.`);

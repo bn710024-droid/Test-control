@@ -109,13 +109,18 @@ export function productOf(p, demoIds) {
   };
 }
 
-/** Annonces en cours (`banners` du v1) → annonces de l'application. Une annonce sans produit est écartée. */
+/**
+ * Annonces en cours (`banners` du v1) → annonces de l'application. `link` : `button` (bouton),
+ * `tap` (toucher l'image ouvre la fiche), `none` (image seule : `id` nul, aucun produit).
+ * Une annonce sans produit n'est gardée que si c'est une image sans lien.
+ */
 export function campaignsOf(banners) {
   return (Array.isArray(banners) ? banners : [])
-    .filter((b) => typeof b?.id === 'string' && b.id)
+    .filter((b) => (typeof b?.id === 'string' && b.id) || (b?.imageUrl && b.link === 'none'))
     .map((b) => ({
-      id: b.id,
+      id: b.link === 'none' ? null : b.id,
       key: b.key,
+      link: b.imageUrl ? (b.link === 'tap' || b.link === 'none' ? b.link : 'button') : 'button',
       accent: b.accent ?? '',
       body: b.body ?? '',
       ...(b.buttonLabel ? { cta: b.buttonLabel } : null),

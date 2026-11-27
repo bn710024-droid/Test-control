@@ -3,6 +3,7 @@ import { preflight, requireAdmin, readBody, log, serverError } from './_lib.js';
 import { loadSeals, stateOf, sealRows, SEALED_TABLES, keyColumn } from './_seal.js';
 import { validateRules, validateProduct, validateCategory, DEFAULT_RULES } from '../shared/catalog.js';
 import { validateRequestMessage } from '../shared/requests.js';
+import { validatePayments } from '../shared/payments.js';
 
 /**
  * Réglages du catalogue :
@@ -20,9 +21,9 @@ export default async function handler(req, res) {
       // Mode visite : lecture ouverte (aucune donnée personnelle dans ces réglages).
       const [{ data, error }, seals] = await Promise.all([supabase.from('settings').select('*'), loadSeals()]);
       if (error) throw error;
-      const out = { rules: DEFAULT_RULES, compat: null, link: null, filters: null, missing: null, updated: {}, seals: {} };
+      const out = { rules: DEFAULT_RULES, compat: null, link: null, filters: null, missing: null, payments: null, updated: {}, seals: {} };
       for (const row of data) {
-        if (!['rules', 'compat', 'link', 'audience', 'filters', 'missing'].includes(row.key)) continue;
+        if (!['rules', 'compat', 'link', 'audience', 'filters', 'missing', 'payments'].includes(row.key)) continue;
         out[row.key] = row.value;
         out.updated[row.key] = row.updated_at;
         out.seals[row.key] = stateOf('settings', row, seals);
@@ -93,6 +94,17 @@ export default async function handler(req, res) {
         }
         const data = await save({ key: 'filters', value: filters });
         await log(admin, 'update', 'settings', 'filters', 'Filtres de l’accueil modifiés (nom ou photo)');
+        return res.status(200).json({ key, value: data.value });
+      }
+
+      if (key === 'payments') {
+        const { errors, value: states } = validatePayments(value);
+        if (Object.keys(errors).length > 0) {
+          return res.status(400).json({ error: Object.values(errors)[0], fields: errors });
+        }
+        const data = await save({ key: 'payments', value: states });
+        const off = Object.entries(states).filter(([, on]) => !on).map(([id]) => id);
+        await log(admin, 'update', 'settings', 'payments', off.length ? `Moyens de paiement : ${off.join(', ')} désactivé(s)` : 'Moyens de paiement : tous activés');
         return res.status(200).json({ key, value: data.value });
       }
 

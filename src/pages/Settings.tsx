@@ -22,6 +22,7 @@ import { ApiError, api, messageOf } from '../lib/api';
 import { ago, initials, kgText, numStr, parseNum, plural } from '../lib/format';
 import { cx } from '../lib/ui';
 import { DEFAULT_RULES, parseCatalog, validateRules, type Errors, type QuantityRules } from '../../shared/catalog.js';
+import { PAYMENT_METHODS, paymentStates } from '../../shared/payments.js';
 
 type Member = { user_id: string; email: string; provider: string; role: 'owner' | 'editor' | 'pending'; since: string | null };
 type Credit = { id: string; title: string; artist: string; license: string; url: string };
@@ -87,7 +88,7 @@ type Report =
 export default function Settings() {
   const { user, access, isOwner, canEdit, signOut } = useAuth();
   const navigate = useNavigate();
-  const { products, settings, loading, error, reload, pendingRefs, saveRules, saveLink, sealRefs } = useData();
+  const { products, settings, loading, error, reload, pendingRefs, saveRules, saveLink, savePayments, sealRefs } = useData();
   const toast = useToast();
   const [params] = useSearchParams();
   const provider = access.status === 'ready' ? access.provider : 'email';
@@ -198,6 +199,22 @@ export default function Settings() {
       toast(messageOf(err), { tone: 'error' });
     } finally {
       setLinking(false);
+    }
+  };
+
+  // ───── Moyens de paiement proposés aux particuliers
+  const payStates = paymentStates(settings?.payments);
+  const [paying, setPaying] = useState<string | null>(null);
+  const setPayment = async (id: string, on: boolean) => {
+    setPaying(id);
+    try {
+      await savePayments({ ...payStates, [id]: on });
+      const name = PAYMENT_METHODS.find((m) => m.id === id)?.title ?? id;
+      toast(on ? `${name} proposé aux clients` : `${name} retiré de l’application`);
+    } catch (err) {
+      toast(messageOf(err), { tone: 'error' });
+    } finally {
+      setPaying(null);
     }
   };
 
@@ -482,6 +499,38 @@ export default function Settings() {
           </div>
 
           <div className="min-w-0">
+            {/* ───── Moyens de paiement */}
+            <Block id="paiements" title="Moyens de paiement">
+              <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
+                Moyens proposés aux particuliers à la validation de commande, publiés dans le catalogue. Aucun n’est encaissé par
+                l’application : l’équipe pointe le paiement reçu dans Commandes.{!isOwner && ' Seul un responsable peut les modifier.'}
+              </p>
+              {PAYMENT_METHODS.map((m) => {
+                const on = payStates[m.id];
+                const last = on && Object.values(payStates).filter(Boolean).length === 1;
+                return (
+                  <div key={m.id} className="mt-4 border-t border-line pt-4">
+                    <div className="flex items-center gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[15px] font-bold leading-5">{m.title}</p>
+                        <p className="mt-0.5 text-[13px] leading-[18px] text-fg-dim">
+                          {m.detail}
+                          {last ? ' · dernier moyen proposé : il reste activé.' : ''}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={on}
+                        onChange={(v) => setPayment(m.id, v)}
+                        disabled={!isOwner || last || (paying !== null && paying !== m.id)}
+                        busy={paying === m.id}
+                        label={m.title}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </Block>
+
             {/* ───── Règles de quantité */}
             <Block id="regles" title="Règles des offres pro">
               <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
