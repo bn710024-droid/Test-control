@@ -63,7 +63,7 @@ export type Order = {
 export type PayMethod = 'orange_money' | 'wave' | 'virement' | 'carte';
 export type Courier = { id: string; name: string; phone: string };
 /** Le GP (transit international) et nos livreurs. Réservé aux comptes autorisés. */
-export type Logistics = { gp: { name: string; whatsapp: string }; gpDelivery: 'aeroport' | 'domicile'; couriers: Courier[] };
+export type Logistics = { gp: { name: string; whatsapp: string }; gpDelivery: 'aeroport' | 'domicile'; gpCountries: string[]; couriers: Courier[] };
 export type OrderPatch = { status?: OrderStatus; paid?: boolean; via?: PayMethod; courier_id?: string | null; airport?: string; delivery?: 'aeroport' | 'domicile'; gp_notified?: boolean; notified_via?: 'whatsapp' | 'email'; stage?: string };
 
 type Value = {

@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { OrdersProvider, useOrders, type Logistics, type Order, type OrderLine, type OrderPatch, type OrderStatus, type PayMethod } from '../contexts/OrdersContext';
 import { Backdrop } from '../components/Shell';
 import { Chip, EmptyState, ErrorPanel, Field, FilterChip, GhostButton, Notice, Page, PageHeader, PrimaryButton, Segmented, Sheet, SkeletonRows } from '../components/ui';
+import { CountryChips } from '../components/CountryChips';
 import { ApiError, messageOf } from '../lib/api';
 import { MONTHS, ago, count, dateTime, euro, kgText, money, normalize, plural } from '../lib/format';
 import { cx } from '../lib/ui';
@@ -1655,7 +1656,7 @@ export function OrdersStats() {
 
 // ───────────── Page « Livraison » : le GP et nos livreurs
 
-const EMPTY: Logistics = { gp: { name: '', whatsapp: '' }, gpDelivery: 'aeroport', couriers: [] };
+const EMPTY: Logistics = { gp: { name: '', whatsapp: '' }, gpDelivery: 'aeroport', gpCountries: [], couriers: [] };
 
 export function OrdersDelivery() {
   const { logistics, saveLogistics, loading, error, reload } = useOrders();
@@ -1665,7 +1666,7 @@ export function OrdersDelivery() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
-  const saved = JSON.stringify(logistics ?? EMPTY);
+  const saved = JSON.stringify({ ...EMPTY, ...(logistics ?? {}) });
   useEffect(() => {
     setForm(JSON.parse(saved));
   }, [saved]);
@@ -1742,6 +1743,16 @@ export function OrdersDelivery() {
                   { value: 'domicile', label: 'Porte à porte' },
                 ]}
               />
+              <p className="mb-[7px] mt-4 text-[13px] font-semibold text-fg-dim">Pays desservis par le GP</p>
+              <CountryChips
+                value={form.gpCountries}
+                onChange={(next) => isOwner && setForm((f) => ({ ...f, gpCountries: next }))}
+                label="Pays desservis par le GP"
+                placeholder="Ajouter un pays : France, Belgique…"
+                exclude={['SN']}
+                disabled={!isOwner}
+              />
+              {errors.gpCountries && <p className="mt-2 text-[13px] text-danger">{errors.gpCountries}</p>}
             </Group>
             <Foot>
               Un seul GP pour le moment.{' '}

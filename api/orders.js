@@ -2,8 +2,8 @@ import crypto from 'node:crypto';
 import supabase from './db-client.js';
 import { preflight, requireAdmin, optionalAdmin, readBody, log, serverError } from './_lib.js';
 import { tooMany } from './_limit.js';
-import { vaultSeal, vaultOpen } from './_seal.js';
-import { resolveOffer, parseRules } from '../shared/catalog.js';
+import { vaultSeal, vaultOpen, sealRows } from './_seal.js';
+import { resolveOffer, parseRules, isCountryCode } from '../shared/catalog.js';
 import { isRequestStatus, requestKey, requestStatusLabel } from '../shared/requests.js';
 import { clientNotice, isSenegal, PRO_STAGES, isProStage, proStageOf, proStageFromStatus, proStageLabel, statusOfProStage } from '../shared/orders.js';
 
@@ -105,6 +105,8 @@ async function loadLogistics() {
     gp: { name: v?.gp?.name ?? '', whatsapp: v?.gp?.whatsapp ?? '' },
     // International : jusqu'où le GP livre par défaut. Chaque commande peut en décider autrement.
     gpDelivery: v?.gpDelivery === 'domicile' ? 'domicile' : 'aeroport',
+    // Pays où le GP livre (hors Sénégal, servi par nos livreurs) : publiés dans le catalogue.
+    gpCountries: Array.isArray(v?.gpCountries) ? v.gpCountries.filter((c) => isCountryCode(c)) : [],
     couriers: Array.isArray(v?.couriers) ? v.couriers : [],
   };
 }
@@ -133,7 +135,10 @@ function validateLogistics(src) {
       phone,
     });
   });
-  return { errors, value: { gp: { name: clip(src?.gp?.name, 60), whatsapp: wa ? `+${wa}` : '' }, gpDelivery: src?.gpDelivery === 'domicile' ? 'domicile' : 'aeroport', couriers } };
+  const asked = Array.isArray(src?.gpCountries) ? src.gpCountries.map((c) => String(c ?? '').toUpperCase()) : [];
+  if (asked.some((c) => !isCountryCode(c))) errors.gpCountries = 'Pays inconnu dans la liste des pays desservis par le GP.';
+  const gpCountries = [...new Set(asked.filter((c) => isCountryCode(c) && c !== 'SN'))].sort().slice(0, 80);
+  return { errors, value: { gp: { name: clip(src?.gp?.name, 60), whatsapp: wa ? `+${wa}` : '' }, gpDelivery: src?.gpDelivery === 'domicile' ? 'domicile' : 'aeroport', gpCountries, couriers } };
 }
 
 // ───────────── Réception depuis l'application d'achat
@@ -627,6 +632,15 @@ export default async function handler(req, res) {
           .from('settings')
           .upsert({ key: 'logistics', value: { enc: vaultSeal(LOGISTICS_REF, value) }, updated_at: new Date().toISOString() }, { onConflict: 'key' });
         if (saveError) throw saveError;
+        // Copie publique et scellée de ce que le catalogue publie : pays du GP et modalité (rien de
+        // personnel — le nom et le numéro du GP restent chiffrés ci-dessus).
+        const { data: gpRow, error: gpError } = await supabase
+          .from('settings')
+          .upsert({ key: 'gp', value: { countries: value.gpCountries, delivery: value.gpDelivery }, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+          .select()
+          .single();
+        if (gpError) throw gpError;
+        await sealRows('settings', [gpRow]);
         await log(admin, 'update', 'order', null, 'Livraison : GP et livreurs mis à jour');
         return res.status(200).json(value);
       }

@@ -24,7 +24,7 @@ export default async function handler(req, res) {
     const [products, categories, settings, seals] = await Promise.all([
       supabase.from('products').select('*').eq('archived', false).order('sort_order', { ascending: true }),
       supabase.from('categories').select('*').order('sort_order', { ascending: true }),
-      supabase.from('settings').select('*').in('key', ['rules', AUDIENCE_KEY, 'filters', 'missing']),
+      supabase.from('settings').select('*').in('key', ['rules', AUDIENCE_KEY, 'filters', 'missing', 'gp']),
       loadSeals(),
     ]);
     const annonces = await supabase.from('publications').select('*').eq('kind', 'annonce').eq('published', true).order('sort_order', { ascending: true });
@@ -132,7 +132,14 @@ export default async function handler(req, res) {
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');
     if (String(req.query?.v ?? '') === '2') {
       const demoIds = new Set(okProducts.filter((p) => p.is_example === true).map((p) => p.id));
-      return res.status(200).json(toAppDocument(doc, { demoIds }));
+      // Livraison GP : pays desservis (Commandes › Livraison), avec la modalité réglée là-bas.
+      const gpRow = settings.data.find((r) => r.key === 'gp') ?? null;
+      const gpOk = !!gpRow && stateOf('settings', gpRow, seals) === 'ok';
+      const option = gpRow?.value?.delivery === 'domicile' ? 'domicile' : 'aéroport';
+      const gp = gpOk && Array.isArray(gpRow.value?.countries)
+        ? gpRow.value.countries.filter((c) => isCountryCode(c) && (!asked || c === asked)).map((country) => ({ country, options: [option] }))
+        : [];
+      return res.status(200).json(toAppDocument(doc, { demoIds, gp }));
     }
     return res.status(200).json(doc);
   } catch (err) {
