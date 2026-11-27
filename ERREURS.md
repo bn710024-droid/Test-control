@@ -4,14 +4,15 @@
 
 - **En ligne** : app https://tropicaura-app.vercel.app · tour https://tropicaura-tour.vercel.app ·
   vraie base Supabase. Les deux PR `nuit-branchement → main` restent ouvertes, non fusionnées.
-- **Tests en ligne** (`app/scripts/online/`) : t1 tour → app 80/80 · t2 app → tour + statuts 42/42 ·
+- **Tests en ligne** (`app/scripts/online/`) : t1 tour → app 81/81 · t2 app → tour + statuts 42/42 ·
   t4 images 20/20 (0 image en 404, 0 image vide) · t5 forfait transport 8/8 · t3 boutons : 954 clics,
   0 erreur. Hors ligne : `test_app.py` 63/63, `tsc` 0 erreur, `npm run build` OK, tests unitaires
   des deux côtés au vert.
 - **Corrigé aujourd'hui** : images de la tour revenues ; annonces « toucher » et « image seule » ;
   libellés des étapes pro ; moyens de paiement réglables ; publications photo dans l'app ; cause du
   raté de statut (la position du client écrasait le statut) ; photos des emballages ; forfaits de
-  transport réglables dans la tour ; identifiant de compte aléatoire.
+  transport réglables dans la tour ; identifiant de compte aléatoire ; photos remplacées
+  supprimées du stockage (plus de fichiers laissés).
 - **À faire par l'équipe** : saisir les vrais forfaits de transport (Réglages › Transport) ; ajouter
   les contenus manquants des emballages (tour n° 3).
 - **Encore ouvert** (décisions de design ou de produit) : app n° 4, 8, 9 ; tour n° 2, 4.
