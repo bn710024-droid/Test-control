@@ -87,3 +87,17 @@ Relevé automatique (13 pages + 17 gestes à 1440×900, base locale) : **0 erreu
 - Réglages › « Transport des particuliers » : un forfait en euros par zone, publié dans `?v=2`
   (`transport`) une fois enregistré ; `value: null` le retire. **À saisir par l'équipe** : le bloc
   affiche le barème d'exemple de l'application tant qu'il n'est pas enregistré.
+
+### 13. Paniers en cours (nouveau, 28/11)
+- Table `carts` (chiffrée, RLS) ; page « Paniers » ; carte et tâche du tableau de bord ; bloc
+  « Panier en cours » chez le client. Limites : voir ERREURS n° 14 de l'application.
+
+### 14. Audit de correspondance : `AUDIT.md`
+- 7 problèmes corrigés + surtitre/titre des annonces ; 4 restants, annoncés dans la tour (emballages
+  « Pros », texte d'une annonce image seule, titre/description des vidéos, rapport des photos).
+
+### 15. Tests en ligne et vraies données
+- Plus aucune remise à zéro globale : un test ne remet que ce qu'il a lui-même modifié (réglage
+  remis seulement s'il n'a pas changé entre-temps), et ne crée que des éléments marqués TEST.
+  t1 et t3 (qui modifiaient des produits réels) refusent de se lancer tant qu'ils ne sont pas
+  réécrits sur des éléments TEST.
