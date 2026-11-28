@@ -37,7 +37,8 @@ export type PackForm = {
   label: string;
   qty: string;
   unit: PackUnit;
-  price: string;
+  /** Prix de l'emballage entier par devise ; vide = non vendu dans cette zone. */
+  prices: { XOF: string; EUR: string; USD: string };
   /** Nombre d'emballages commandés : palier, minimum, maximum (en emballages entiers). */
   step: string;
   min: string;
@@ -48,11 +49,13 @@ export type PackForm = {
   photo: string;
   /** Phrase affichée au client quand il choisit cet emballage. Facultative. */
   description: string;
-  /** Réglages par pays : proposé ou non, au prix d'origine ou à un prix propre, avec la même photo ou la leur. */
-  countries: PackCountryForm[];
+  /** Photo du produit dans l'emballage (grand aperçu de la fiche), ou chaîne vide. */
+  preview: string;
+  /** Pays : toutes les zones avec un prix, seulement ces pays, ou sauf ces pays. */
+  countries: { mode: 'zone' | 'pays' | 'sauf'; list: string[] };
+  /** Emballage sélectionné à l'ouverture de la fiche. */
+  isDefault: boolean;
 };
-/** Réglage d'un emballage pour un groupe de pays. `own` : « prix propre », sinon prix d'origine. */
-export type PackCountryForm = { key: string; countries: string[]; available: boolean; own: boolean; price: string; /** « Photo propre », sinon la même photo que l'emballage d'origine. */ ownPhoto: boolean; photo: string };
 
 export type Form = {
   id: string;
@@ -70,6 +73,9 @@ export type Form = {
   available: boolean;
   archived: boolean;
   bio: boolean;
+  /** Particuliers : 'emballe' (vendu par ses emballages) ou 'frais' (au kilo ou à la pièce). */
+  kind: 'emballe' | 'frais';
+  /** Frais : proposé aux particuliers. Désactivé, les prix restent enregistrés. */
   sold: boolean;
   price: string;
   unit: 'kg' | 'unit';
@@ -93,8 +99,7 @@ export type Form = {
 
 let sequence = 0;
 
-export const newPack = (): PackForm => ({ key: `emballage-${++sequence}`, id: '', label: '', qty: '', unit: 'kg', price: '', step: '1', min: '', max: '', audience: 'tous', available: true, photo: '', description: '', countries: [] });
-export const newPackCountry = (): PackCountryForm => ({ key: `emballage-pays-${++sequence}`, countries: [], available: true, own: false, price: '', ownPhoto: false, photo: '' });
+export const newPack = (): PackForm => ({ key: `emballage-${++sequence}`, id: '', label: '', qty: '', unit: 'g', prices: { XOF: '', EUR: '', USD: '' }, step: '1', min: '', max: '', audience: 'tous', available: true, photo: '', preview: '', description: '', countries: { mode: 'zone', list: [] }, isDefault: false });
 
 /** Emballage tel qu'il sera envoyé (et tel que l'aperçu client le montre pendant la saisie). */
 export const packInput = (k: PackForm): Packaging => ({
@@ -102,7 +107,8 @@ export const packInput = (k: PackForm): Packaging => ({
   label: k.label,
   qty: parseNum(k.qty),
   unit: k.unit,
-  price: parseNum(k.price),
+  prices: { XOF: parseNum(k.prices.XOF), EUR: parseNum(k.prices.EUR), USD: parseNum(k.prices.USD) },
+  price: parseNum(k.prices.EUR),
   // Palier laissé vide : 1 emballage. Minimum et maximum vides : non fixés.
   step: parseNum(k.step) ?? 1,
   min: parseNum(k.min),
@@ -110,20 +116,12 @@ export const packInput = (k: PackForm): Packaging => ({
   audience: k.audience,
   available: k.available,
   photo_url: k.photo || null,
+  preview_url: k.preview || null,
   description: k.description,
-  ...(k.countries.length > 0
-    ? {
-        countryRules: k.countries.map((g) => ({
-          countries: g.countries,
-          available: g.available,
-          own: g.available && g.own,
-          price: g.available && g.own ? parseNum(g.price) : null,
-          ownPhoto: g.available && g.ownPhoto,
-          photo_url: g.available && g.ownPhoto ? g.photo || null : null,
-        })),
-      }
-    : null),
+  countries: { mode: k.countries.mode, list: k.countries.mode === 'zone' ? [] : k.countries.list },
+  is_default: k.isDefault,
 });
+
 
 export const newOffer = (mode: Mode | null): OfferForm => ({
   key: `offre-${++sequence}`,
@@ -181,7 +179,8 @@ export function toForm(p: Product | null, category: string): Form {
     available: p?.available ?? false,
     archived: p?.archived ?? false,
     bio: p?.bio ?? false,
-    sold: !!r,
+    kind: r?.kind === 'emballe' ? 'emballe' : 'frais',
+    sold: !!r && r.active !== false,
     price: numStr(r?.price),
     unit: r?.unit ?? 'kg',
     // Une vente à la pièce ne porte jamais le libellé « le kg ».
@@ -193,7 +192,24 @@ export function toForm(p: Product | null, category: string): Form {
     max: numStr(r?.max),
     countryPrices: (r?.countryPrices ?? []).map((g) => ({ key: `prix-pays-${++sequence}`, countries: [...g.countries], price: numStr(g.price) })),
     offers: (p?.wholesale ?? []).map(offerToForm),
-    packs: (p?.packagings ?? []).map((k) => ({ key: `emballage-${++sequence}`, id: k.id, label: k.label, qty: numStr(k.qty), unit: k.unit, price: numStr(k.price), step: numStr(k.step ?? 1), min: numStr(k.min), max: numStr(k.max), audience: k.audience, available: k.available, photo: k.photo_url ?? '', description: k.description ?? '', countries: (k.countryRules ?? []).map((g) => ({ key: `emballage-pays-${++sequence}`, countries: [...g.countries], available: g.available !== false, own: g.price !== null && g.price !== undefined, price: numStr(g.price), ownPhoto: !!g.photo_url, photo: g.photo_url ?? '' })) })),
+    packs: (p?.packagings ?? []).map((k) => ({
+      key: `emballage-${++sequence}`,
+      id: k.id,
+      label: k.label,
+      qty: numStr(k.qty),
+      unit: k.unit,
+      prices: { XOF: numStr(k.prices?.XOF ?? null), EUR: numStr(k.prices ? (k.prices.EUR ?? null) : k.price), USD: numStr(k.prices?.USD ?? null) },
+      step: numStr(k.step ?? 1),
+      min: numStr(k.min),
+      max: numStr(k.max),
+      audience: k.audience,
+      available: k.available,
+      photo: k.photo_url ?? '',
+      preview: k.preview_url ?? '',
+      description: k.description ?? '',
+      countries: { mode: k.countries?.mode ?? 'zone', list: [...(k.countries?.list ?? [])] },
+      isDefault: k.is_default === true,
+    })),
     rating: Number(p?.rating) || 0,
     reviews: p?.reviews ?? 0,
     is_example: p?.is_example ?? false,
@@ -245,8 +261,11 @@ export function toInput(f: Form): ProductInput {
     rating: f.rating,
     reviews: f.reviews,
     is_example: f.is_example,
-    retail: f.sold
+    // Les valeurs de l'offre particuliers sont gardées, même emballé ou désactivé : rien n'est effacé.
+    retail: f.sold || f.kind === 'emballe' || f.price.trim() !== ''
       ? {
+          kind: f.kind,
+          active: f.kind === 'emballe' ? true : f.sold,
           price: parseNum(f.price),
           unit: f.unit,
           unitLabel: f.unit === 'kg' ? 'le kg' : f.unitLabel,

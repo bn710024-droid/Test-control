@@ -1,11 +1,13 @@
 import supabase from './db-client.js';
+import { removeUnusedPhotos } from './_files.js';
 import { preflight, requireAdmin, optionalAdmin, readBody, log, serverError } from './_lib.js';
-import { loadSeals, stateOf, sealRows, unseal } from './_seal.js';
+import { loadSeals, stateOf, sealRows, unseal, spaceOf, rowSpace } from './_seal.js';
+import { validatePro, emptyPro } from '../shared/pro.js';
 import { validateProduct, validatePackagings, validateZone, zoneOf, zoneLabel, DEFAULT_RULES, modeLabel } from '../shared/catalog.js';
 
 const BUCKET = 'catalogue';
 
-async function loadContext() {
+async function loadContext(space = 'b2c') {
   const [categories, rules, products, seals] = await Promise.all([
     supabase.from('categories').select('*'),
     supabase.from('settings').select('*').eq('key', 'rules').maybeSingle(),
@@ -16,9 +18,12 @@ async function loadContext() {
   if (rules.error) throw rules.error;
   if (products.error) throw products.error;
   const rulesOk = rules.data && stateOf('settings', rules.data, seals) === 'ok';
+  // Un produit ne se range que dans un rayon de SON espace.
+  const own = categories.data.filter((c) => rowSpace(c) === space);
   return {
-    categories: categories.data,
-    categoryIds: categories.data.map((c) => c.id),
+    space,
+    categories: own,
+    categoryIds: own.map((c) => c.id),
     rules: rulesOk ? rules.data.value : DEFAULT_RULES,
     products: products.data,
     seals,
@@ -138,11 +143,17 @@ async function applyUpdate(current, changes, expected, ctx, admin, full) {
     merged.rating = Number(current.rating) || 0;
     merged.reviews = Number(current.reviews) || 0;
   }
+  const pro = rowSpace(current) === 'b2b';
+  // Espace Pros : ni prix particuliers ni anciennes offres ; tout est dans la fiche pro.
+  if (pro) Object.assign(merged, { retail: null, wholesale: [] });
   const { errors, value } = validateProduct(merged, { categoryIds: ctx.categoryIds, rules: ctx.rules });
+  const sheet = pro ? validatePro(merged.pro ?? current.pro) : null;
+  if (sheet) Object.assign(errors, sheet.errors);
   if (Object.keys(errors).length > 0) {
     return { ok: false, status: 400, error: Object.values(errors)[0], fields: errors };
   }
   const { id: _id, ...fields } = value;
+  if (sheet) fields.pro = sheet.value;
   const { data, error } = await supabase
     .from('products')
     .update({ ...fields, updated_at: new Date().toISOString(), updated_by: admin.id })
@@ -165,7 +176,7 @@ async function applyUpdate(current, changes, expected, ctx, admin, full) {
 
 const CHANGEABLE = [
   'name', 'variety', 'category', 'origin', 'description', 'photo_asset', 'photo_url', 'photo_ratio',
-  'tint', 'months', 'available', 'archived', 'bio', 'rating', 'reviews', 'retail', 'wholesale', 'is_example',
+  'tint', 'months', 'available', 'archived', 'bio', 'rating', 'reviews', 'retail', 'wholesale', 'is_example', 'pro',
 ];
 const pick = (src) => Object.fromEntries(CHANGEABLE.filter((k) => k in src).map((k) => [k, src[k]]));
 
@@ -181,21 +192,27 @@ export default async function handler(req, res) {
       ]);
       if (error) throw error;
       const [packs, zones] = await Promise.all([loadPacks(), loadZones(seals)]);
-      return res.status(200).json(data.map((p) => ({ ...p, updated_by: admin ? p.updated_by : null, packagings: packs.get(p.id) ?? [], zone: zones.get(p.id) ?? zoneOf(null), _seal: stateOf('products', p, seals) })));
+      const space = spaceOf(req);
+      return res.status(200).json(data.filter((p) => rowSpace(p) === space).map((p) => ({ ...p, updated_by: admin ? p.updated_by : null, packagings: packs.get(p.id) ?? [], zone: zones.get(p.id) ?? zoneOf(null), _seal: stateOf('products', p, seals) })));
     }
 
     if (req.method === 'POST') {
       const admin = await requireAdmin(req, res);
       if (!admin) return;
       const body = readBody(req);
-      const ctx = await loadContext();
+      const space = spaceOf(req, body);
+      const ctx = await loadContext(space);
+      const isPro = space === 'b2b';
       const { errors, value } = validateProduct(
-        { ...body, rating: 0, reviews: 0, archived: false },
+        { ...body, rating: 0, reviews: 0, archived: false, ...(isPro ? { retail: null, wholesale: [] } : null) },
         { isNew: true, existingIds: ctx.products.map((p) => p.id), categoryIds: ctx.categoryIds, rules: ctx.rules },
       );
-      const packs = validatePackagings(body.packagings);
+      // Espace Pros : la fiche pro (statut, offres par groupe de pays, logistique…) ; pas d'emballages.
+      const sheet = isPro ? validatePro(body.pro ?? emptyPro()) : null;
+      if (sheet) Object.assign(errors, sheet.errors);
+      const packs = validatePackagings(isPro ? [] : body.packagings);
       Object.assign(errors, packs.errors);
-      const place = validateZone(body.zone);
+      const place = validateZone(isPro ? null : body.zone);
       Object.assign(errors, place.errors);
       if (Object.keys(errors).length > 0) {
         return res.status(400).json({ error: Object.values(errors)[0], fields: errors });
@@ -204,14 +221,14 @@ export default async function handler(req, res) {
       const now = new Date().toISOString();
       const { data, error } = await supabase
         .from('products')
-        .insert({ ...value, sort_order: last + 10, created_at: now, updated_at: now, updated_by: admin.id })
+        .insert({ ...value, space, ...(sheet ? { pro: sheet.value } : null), sort_order: last + 10, created_at: now, updated_at: now, updated_by: admin.id })
         .select()
         .single();
       if (error) throw error;
       await sealRows('products', [data]);
       const items = packs.value.length > 0 ? await savePacks(data.id, packs.value) : [];
       const zone = place.value.mode === 'all' ? place.value : await saveZone(data.id, place.value);
-      await log(admin, 'create', 'product', data.id, `${data.name} : produit créé${data.available ? '' : ' (masqué)'}${zone.mode === 'all' ? '' : ` · ${zoneLabel(zone, true)}`}`);
+      await log(admin, 'create', 'product', data.id, `${data.name} : produit créé${isPro ? ' (espace Pros)' : ''}${data.available ? '' : ' (masqué)'}${zone.mode === 'all' ? '' : ` · ${zoneLabel(zone, true)}`}`);
       return res.status(201).json({ ...data, packagings: items, zone, _seal: 'ok' });
     }
 
@@ -219,8 +236,10 @@ export default async function handler(req, res) {
       const admin = await requireAdmin(req, res);
       if (!admin) return;
       const body = readBody(req);
-      const ctx = await loadContext();
-      const byId = new Map(ctx.products.map((p) => [p.id, p]));
+      const space = spaceOf(req, body);
+      const ctx = await loadContext(space);
+      // Un espace ne touche jamais aux produits de l'autre.
+      const byId = new Map(ctx.products.filter((p) => rowSpace(p) === space).map((p) => [p.id, p]));
 
       // Mise à jour en série (prix, disponibilités) : chaque ligne réussit ou échoue pour elle-même.
       if (Array.isArray(body.updates)) {
@@ -228,6 +247,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: 'Trop de modifications en une fois (120 au plus).' });
         }
         const results = [];
+        const replaced = [];
         for (const u of body.updates) {
           const current = byId.get(u?.id);
           if (!current) {
@@ -236,27 +256,32 @@ export default async function handler(req, res) {
           }
           const result = await applyUpdate(current, pick(u.changes || {}), u.expected_updated_at, ctx, admin, false);
           results.push({ id: current.id, ...result });
+          if (result.ok && (result.row.photo_url ?? null) !== (current.photo_url ?? null)) replaced.push(current.photo_url);
         }
+        // Photos remplacées ou retirées : leurs fichiers ne servent plus.
+        await removeUnusedPhotos(replaced);
         return res.status(200).json({ results });
       }
 
       const current = byId.get(body.id);
-      if (!current) return res.status(404).json({ error: 'Produit introuvable : il a peut-être été supprimé.' });
+      if (!current) return res.status(404).json({ error: 'Produit introuvable dans cet espace : il a peut-être été supprimé.' });
       // Les emballages voyagent avec la fiche : contrôlés avant d'enregistrer quoi que ce soit.
-      const packs = Array.isArray(body.packagings) ? validatePackagings(body.packagings) : null;
+      const packs = space === 'b2c' && Array.isArray(body.packagings) ? validatePackagings(body.packagings) : null;
       if (packs && Object.keys(packs.errors).length > 0) {
         return res.status(400).json({ error: Object.values(packs.errors)[0], fields: packs.errors });
       }
-      const place = body.zone !== undefined ? validateZone(body.zone) : null;
+      const place = space === 'b2c' && body.zone !== undefined ? validateZone(body.zone) : null;
       if (place && Object.keys(place.errors).length > 0) {
         return res.status(400).json({ error: Object.values(place.errors)[0], fields: place.errors });
       }
       const result = await applyUpdate(current, pick(body), body.expected_updated_at, ctx, admin, body.full === true);
       if (!result.ok) return res.status(result.status).json({ error: result.error, fields: result.fields });
+      // Photo du produit remplacée ou retirée : son fichier ne sert plus (s'il n'est cité nulle part).
+      if ((result.row.photo_url ?? null) !== (current.photo_url ?? null)) await removeUnusedPhotos([current.photo_url]);
       const before = (await loadPacks()).get(current.id) ?? [];
       let items = before;
       // La base range les clés dans son ordre à elle : on compare champ par champ.
-      const flat = (list) => JSON.stringify(list.map((k) => [k.id, k.label, k.qty, k.unit, k.price, k.step ?? 1, k.min ?? null, k.max ?? null, k.audience, k.available, k.photo_url ?? null, k.description ?? '', (k.countryRules ?? []).map((g) => [g.countries, g.available !== false, g.price ?? null, g.photo_url ?? null])]));
+      const flat = (list) => JSON.stringify(list.map((k) => [k.id, k.label, k.qty, k.unit, k.price, k.step ?? 1, k.min ?? null, k.max ?? null, k.audience, k.available, k.photo_url ?? null, k.description ?? '', (k.countryRules ?? []).map((g) => [g.countries, g.available !== false, g.price ?? null, g.photo_url ?? null]), k.prices ? [k.prices.XOF ?? null, k.prices.EUR ?? null, k.prices.USD ?? null] : null, k.countries ? [k.countries.mode, k.countries.list] : null, k.is_default === true, k.preview_url ?? null]));
       if (packs && flat(packs.value) !== flat(before)) {
         items = await savePacks(current.id, packs.value);
         // Photos d'emballage retirées ou remplacées : leurs fichiers ne servent plus.
@@ -277,9 +302,11 @@ export default async function handler(req, res) {
       // Suppression définitive : réservée aux responsables. Les éditeurs archivent.
       const admin = await requireAdmin(req, res, { owner: true });
       if (!admin) return;
-      const { id } = readBody(req);
-      const ctx = await loadContext();
-      const current = ctx.products.find((p) => p.id === id);
+      const body = readBody(req);
+      const { id } = body;
+      const space = spaceOf(req, body);
+      const ctx = await loadContext(space);
+      const current = ctx.products.find((p) => p.id === id && rowSpace(p) === space);
       if (!current) return res.status(404).json({ error: 'Produit introuvable : il a peut-être déjà été supprimé.' });
 
       // Cohérence des références : un rayon illustré par ce produit perd son illustration.
@@ -305,17 +332,8 @@ export default async function handler(req, res) {
       await supabase.from('zones').delete().eq('id', id);
       await unseal('zones', id);
 
-      const marker = `/object/public/${BUCKET}/`;
-      if (current.photo_url && current.photo_url.includes(marker)) {
-        const path = current.photo_url.split(marker)[1];
-        if (path) {
-          try {
-            await supabase.storage.from(BUCKET).remove([path]);
-          } catch {
-            // L'image reste dans le stockage : sans conséquence pour le catalogue.
-          }
-        }
-      }
+      // Sa photo n'est supprimée que si aucune autre ligne ne la cite.
+      await removeUnusedPhotos([current.photo_url]);
       await log(admin, 'delete', 'product', id, `${current.name} : produit supprimé définitivement`);
       return res.status(200).json({ ok: true });
     }

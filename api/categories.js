@@ -1,6 +1,7 @@
 import supabase from './db-client.js';
+import { removeUnusedPhotos } from './_files.js';
 import { preflight, requireAdmin, optionalAdmin, readBody, log, serverError } from './_lib.js';
-import { loadSeals, stateOf, sealRows, unseal, AUDIENCE_KEY, proHiddenOf, saveProHidden } from './_seal.js';
+import { loadSeals, stateOf, sealRows, unseal, AUDIENCE_KEY, proHiddenOf, saveProHidden, spaceOf, rowSpace } from './_seal.js';
 import { validateCategory } from '../shared/catalog.js';
 
 export default async function handler(req, res) {
@@ -10,12 +11,16 @@ export default async function handler(req, res) {
     const admin = req.method === 'GET' ? await optionalAdmin(req) : await requireAdmin(req, res);
     if (!admin && req.method !== 'GET') return;
 
-    const [all, seals, audience] = await Promise.all([
+    const body0 = req.method === 'GET' ? {} : readBody(req);
+    const space = spaceOf(req, body0);
+    const [everything, seals, audience] = await Promise.all([
       supabase.from('categories').select('*').order('sort_order', { ascending: true }).order('id', { ascending: true }),
       loadSeals(),
       supabase.from('settings').select('*').eq('key', AUDIENCE_KEY).maybeSingle(),
     ]);
-    if (all.error) throw all.error;
+    if (everything.error) throw everything.error;
+    // Chaque espace a ses rayons ; les identifiants restent uniques sur les deux.
+    const all = { data: everything.data.filter((c) => rowSpace(c) === space) };
     if (audience.error) throw audience.error;
     // Rayons que les grossistes et importateurs ne voient pas.
     const hidden = proHiddenOf(audience.data, seals, all.data.map((c) => c.id));
@@ -24,16 +29,17 @@ export default async function handler(req, res) {
       return res.status(200).json(all.data.map((c) => ({ ...c, _seal: stateOf('categories', c, seals), pro_visible: !hidden.includes(c.id) })));
     }
 
-    const body = readBody(req);
-    const products = await supabase.from('products').select('id, category');
-    if (products.error) throw products.error;
+    const body = body0;
+    const allProducts = await supabase.from('products').select('id, category, space');
+    if (allProducts.error) throw allProducts.error;
+    const products = { data: allProducts.data.filter((p) => rowSpace(p) === space) };
     const productIds = products.data.map((p) => p.id);
     const now = new Date().toISOString();
 
     if (req.method === 'POST') {
       const { errors, value } = validateCategory(body, {
         isNew: true,
-        existingIds: all.data.map((c) => c.id),
+        existingIds: everything.data.map((c) => c.id),
         productIds,
       });
       if (Object.keys(errors).length > 0) {
@@ -42,7 +48,7 @@ export default async function handler(req, res) {
       const last = Math.max(0, ...all.data.map((c) => c.sort_order ?? 0));
       const { data, error } = await supabase
         .from('categories')
-        .insert({ ...value, sort_order: last + 10, created_at: now, updated_at: now })
+        .insert({ ...value, space, sort_order: last + 10, created_at: now, updated_at: now })
         .select()
         .single();
       if (error) throw error;
@@ -98,6 +104,7 @@ export default async function handler(req, res) {
         .single();
       if (error) throw error;
       await sealRows('categories', [data]);
+      if ((data.image_url ?? null) !== (current.image_url ?? null)) await removeUnusedPhotos([current.image_url]);
       const wasVisible = !hidden.includes(current.id);
       const proVisible = typeof body.pro_visible === 'boolean' ? body.pro_visible : wasVisible;
       if (proVisible !== wasVisible) {
@@ -127,6 +134,7 @@ export default async function handler(req, res) {
       const { error } = await supabase.from('categories').delete().eq('id', current.id);
       if (error) throw error;
       await unseal('categories', current.id);
+      await removeUnusedPhotos([current.image_url]);
       if (hidden.includes(current.id)) await saveProHidden(hidden.filter((x) => x !== current.id));
       await log(admin, 'delete', 'category', current.id, `Rayon « ${current.label} » supprimé`);
       return res.status(200).json({ ok: true });

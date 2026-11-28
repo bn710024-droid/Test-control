@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { RequestMessage } from '../../shared/requests.js';
+import { embeddedAssetsOf } from '../../shared/assets.js';
 import { ApiError, api, messageOf } from '../lib/api';
 import { useAuth } from './AuthContext';
 import { blobToBase64 } from '../lib/image';
@@ -30,9 +31,16 @@ export type Settings = {
   filters: Record<HomeFilterId, HomeFilter> | null;
   /** Message des produits introuvables. `null` : jamais réglé, les textes par défaut s'appliquent. */
   missing: RequestMessage | null;
+  /** Moyens de paiement activés (`{ orange_money: true, … }`). `null` : jamais réglé, tous activés. */
+  payments: Record<string, boolean> | null;
+  /** Forfaits de transport par zone et par devise de client. `null` : jamais réglés. */
+  transport: Record<string, unknown> | null;
+  /** Espace Pros : conditions de paiement et logistique par défaut (pré-remplies dans les fiches). */
+  terms: ProTerms | null;
   updated: Record<string, string>;
   seals: Record<string, Seal>;
 };
+export type ProTerms = { terms: string; port: string; airport: string; station: string };
 export type Activity = {
   id: number;
   at: string;
@@ -78,8 +86,11 @@ type DataValue = {
 
   saveRules: (rules: unknown) => Promise<void>;
   saveLink: (link: { appLinked: boolean; note: string }) => Promise<void>;
+  savePayments: (payments: Record<string, boolean>) => Promise<void>;
+  saveTransport: (fees: Record<string, { XOF: number | null; EUR: number | null; USD: number | null }>) => Promise<void>;
   saveFilters: (filters: Record<HomeFilterId, HomeFilter>) => Promise<void>;
   saveRequestMessage: (message: RequestMessage) => Promise<void>;
+  saveTerms: (terms: ProTerms) => Promise<void>;
   sealRefs: (refs: string[]) => Promise<{ sealed: string[]; refused: { ref: string; error: string }[] }>;
   uploadImage: (kind: 'products' | 'categories' | 'packagings', id: string, blob: Blob) => Promise<string>;
 };
@@ -145,11 +156,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [reload]);
 
-  const embedded = settings?.compat?.embeddedAssets;
+  // Photos connues : celles de l'application et celles fournies avec la tour (base neuve comprise).
+  const embedded = useMemo(() => embeddedAssetsOf(settings?.compat), [settings?.compat]);
   const photoOf = useCallback<DataValue['photoOf']>(
     (p, size = 'thumb') => {
       if (p.photo_url) return p.photo_url;
-      if (p.photo_asset && embedded?.includes(p.photo_asset)) {
+      if (p.photo_asset && embedded.includes(p.photo_asset)) {
         return size === 'thumb' ? `/produce/thumb/${p.photo_asset}.webp` : `/produce/${p.photo_asset}.webp`;
       }
       return null;
@@ -190,11 +202,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const issuesOf = useCallback(
     (p: Product) =>
       completeness(p, {
-        embeddedAssets: settings?.compat?.embeddedAssets ?? [],
+        embeddedAssets: embedded,
         appCategoryIds: settings?.compat?.categoryIds,
         rules: settings?.rules,
       }),
-    [settings],
+    [settings, embedded],
   );
 
   const categoryLabel = useCallback(
@@ -310,9 +322,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
       await api('/api/settings', { method: 'PUT', body: { key: 'missing', value: message } });
       await refresh();
     },
+    saveTerms: async (terms) => {
+      guard();
+      await api('/api/settings', { method: 'PUT', body: { key: 'terms', value: terms } });
+      await refresh();
+    },
     saveLink: async (link) => {
       guard();
       await api('/api/settings', { method: 'PUT', body: { key: 'link', value: link } });
+      await refresh();
+    },
+    savePayments: async (payments) => {
+      guard();
+      await api('/api/settings', { method: 'PUT', body: { key: 'payments', value: payments } });
+      await refresh();
+    },
+    saveTransport: async (fees) => {
+      guard();
+      await api('/api/settings', { method: 'PUT', body: { key: 'transport', value: fees } });
       await refresh();
     },
     sealRefs: async (refs) => {

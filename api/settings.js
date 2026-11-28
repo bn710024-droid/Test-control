@@ -1,8 +1,12 @@
 import supabase from './db-client.js';
+import { removeUnusedPhotos } from './_files.js';
 import { preflight, requireAdmin, readBody, log, serverError } from './_lib.js';
-import { loadSeals, stateOf, sealRows, SEALED_TABLES, keyColumn } from './_seal.js';
+import { loadSeals, stateOf, sealRows, unseal, SEALED_TABLES, keyColumn, spaceOf, settingKey, SPACE_SETTINGS } from './_seal.js';
+import { PRO_LIMITS } from '../shared/pro.js';
 import { validateRules, validateProduct, validateCategory, DEFAULT_RULES } from '../shared/catalog.js';
 import { validateRequestMessage } from '../shared/requests.js';
+import { validatePayments } from '../shared/payments.js';
+import { validateTransport } from '../shared/transport.js';
 
 /**
  * Réglages du catalogue :
@@ -20,21 +24,31 @@ export default async function handler(req, res) {
       // Mode visite : lecture ouverte (aucune donnée personnelle dans ces réglages).
       const [{ data, error }, seals] = await Promise.all([supabase.from('settings').select('*'), loadSeals()]);
       if (error) throw error;
-      const out = { rules: DEFAULT_RULES, compat: null, link: null, filters: null, missing: null, updated: {}, seals: {} };
+      // Chaque espace lit SES réglages (ceux des Pros sous « pro.<clé> ») et les réglages communs.
+      const space = spaceOf(req);
+      const out = { space, rules: DEFAULT_RULES, compat: null, link: null, filters: null, missing: null, payments: null, transport: null, terms: null, updated: {}, seals: {} };
+      const wanted = new Map(['rules', 'compat', 'link', ...SPACE_SETTINGS[space]].map((k) => [settingKey(space, k), k]));
       for (const row of data) {
-        if (!['rules', 'compat', 'link', 'audience', 'filters', 'missing'].includes(row.key)) continue;
-        out[row.key] = row.value;
-        out.updated[row.key] = row.updated_at;
-        out.seals[row.key] = stateOf('settings', row, seals);
+        const key = wanted.get(row.key);
+        if (!key) continue;
+        out[key] = row.value;
+        out.updated[key] = row.updated_at;
+        out.seals[key] = stateOf('settings', row, seals);
       }
       return res.status(200).json(out);
     }
 
     if (req.method === 'PUT') {
-      const { key, value } = readBody(req);
+      const body = readBody(req);
+      const { key, value } = body;
+      const space = spaceOf(req, body);
+      if (!['rules', 'link', ...SPACE_SETTINGS[space]].includes(key)) {
+        return res.status(400).json({ error: space === 'b2b' ? 'Ce réglage appartient à l’espace Particuliers.' : 'Ce réglage appartient à l’espace Pros.' });
+      }
+      const stored = settingKey(space, key);
       // Les filtres de l'accueil et le message des produits introuvables se règlent par toute
       // l'équipe, comme les rayons et les publications ; le reste est réservé aux responsables.
-      const admin = await requireAdmin(req, res, { owner: key !== 'filters' && key !== 'missing' });
+      const admin = await requireAdmin(req, res, { owner: key !== 'filters' && key !== 'missing' && key !== 'terms' });
       if (!admin) return;
       const now = new Date().toISOString();
 
@@ -91,8 +105,40 @@ export default async function handler(req, res) {
           const ratio = typeof f.image_ratio === 'number' && f.image_ratio >= 0.1 && f.image_ratio <= 10 ? Math.round(f.image_ratio * 1000) / 1000 : 1;
           filters[id] = { label, image_url: image, image_ratio: image ? ratio : 1 };
         }
-        const data = await save({ key: 'filters', value: filters });
-        await log(admin, 'update', 'settings', 'filters', 'Filtres de l’accueil modifiés (nom ou photo)');
+        const { data: old } = await supabase.from('settings').select('value').eq('key', stored).maybeSingle();
+        const data = await save({ key: stored, value: filters });
+        // Images remplacées ou retirées : supprimées si plus rien ne les cite (celles gardées le sont).
+        await removeUnusedPhotos(['tout', 'saison'].map((id) => old?.value?.[id]?.image_url));
+        await log(admin, 'update', 'settings', stored, `Filtres de l’accueil${space === 'b2b' ? ' (Pros)' : ''} modifiés (nom ou photo)`);
+        return res.status(200).json({ key, value: data.value });
+      }
+
+      if (key === 'payments') {
+        const { errors, value: states } = validatePayments(value);
+        if (Object.keys(errors).length > 0) {
+          return res.status(400).json({ error: Object.values(errors)[0], fields: errors });
+        }
+        const data = await save({ key: 'payments', value: states });
+        const off = Object.entries(states).filter(([, on]) => !on).map(([id]) => id);
+        await log(admin, 'update', 'settings', 'payments', off.length ? `Moyens de paiement : ${off.join(', ')} désactivé(s)` : 'Moyens de paiement : tous activés');
+        return res.status(200).json({ key, value: data.value });
+      }
+
+      if (key === 'transport') {
+        // `null` : forfaits retirés, l'application reprend son barème d'exemple.
+        if (value === null) {
+          const { error } = await supabase.from('settings').delete().eq('key', 'transport');
+          if (error) throw error;
+          await unseal('settings', 'transport');
+          await log(admin, 'update', 'settings', 'transport', 'Forfaits de transport retirés : barème de l’application');
+          return res.status(200).json({ key, value: null });
+        }
+        const { errors, value: fees } = validateTransport(value);
+        if (Object.keys(errors).length > 0) {
+          return res.status(400).json({ error: Object.values(errors)[0], fields: errors });
+        }
+        const data = await save({ key: 'transport', value: fees });
+        await log(admin, 'update', 'settings', 'transport', 'Forfaits de transport des particuliers modifiés');
         return res.status(200).json({ key, value: data.value });
       }
 
@@ -101,8 +147,23 @@ export default async function handler(req, res) {
         if (Object.keys(errors).length > 0) {
           return res.status(400).json({ error: Object.values(errors)[0], fields: errors });
         }
-        const data = await save({ key: 'missing', value: message });
-        await log(admin, 'update', 'settings', 'missing', `Produits introuvables : message au client ${message.enabled ? 'modifié' : 'désactivé'}`);
+        const data = await save({ key: stored, value: message });
+        await log(admin, 'update', 'settings', stored, `Produits introuvables${space === 'b2b' ? ' (Pros)' : ''} : message au client ${message.enabled ? 'modifié' : 'désactivé'}`);
+        return res.status(200).json({ key, value: data.value });
+      }
+
+      if (key === 'terms') {
+        // Espace Pros : conditions de paiement, port, aéroport et station de conditionnement par
+        // défaut — pré-remplis dans chaque nouvelle fiche pro.
+        const cut = (v, max) => String(v ?? '').trim().slice(0, max);
+        const terms = {
+          terms: cut(value?.terms, PRO_LIMITS.terms),
+          port: cut(value?.port, PRO_LIMITS.place),
+          airport: cut(value?.airport, PRO_LIMITS.place),
+          station: cut(value?.station, PRO_LIMITS.place),
+        };
+        const data = await save({ key: stored, value: terms });
+        await log(admin, 'update', 'settings', stored, 'Pros : conditions de paiement et logistique par défaut modifiées');
         return res.status(200).json({ key, value: data.value });
       }
 

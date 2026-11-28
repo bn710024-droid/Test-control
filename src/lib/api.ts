@@ -1,4 +1,5 @@
 import supabase from './supabase';
+import { withSpace } from './space';
 
 export class ApiError extends Error {
   status: number;
@@ -25,7 +26,7 @@ export async function api<T>(path: string, options: { method?: string; body?: un
   const token = data.session?.access_token;
   let res: Response;
   try {
-    res = await fetch(path, {
+    res = await fetch(withSpace(path), {
       method: options.method ?? 'GET',
       headers: {
         'Content-Type': 'application/json',

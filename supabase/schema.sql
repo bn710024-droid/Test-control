@@ -39,6 +39,12 @@ create table if not exists products (
   updated_by text                -- identifiant du compte, jamais une adresse e-mail
 );
 
+-- Deux espaces (28/11/2026) : Particuliers ('b2c') et Professionnels ('b2b'), données séparées.
+-- Un produit, un rayon, une publication n'existe que dans un espace. Fiche pro : colonne `pro`.
+alter table products add column if not exists space text not null default 'b2c' check (space in ('b2c','b2b'));
+alter table products add column if not exists pro jsonb;
+alter table categories add column if not exists space text not null default 'b2c' check (space in ('b2c','b2b'));
+
 create table if not exists settings (
   key text primary key,          -- 'rules' | 'compat' | 'link' | 'audience' (rayons masqués aux pros) | 'filters' (Tout, De saison)
   value jsonb not null,
@@ -79,6 +85,7 @@ create table if not exists publications (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+alter table publications add column if not exists space text not null default 'b2c' check (space in ('b2c','b2b'));
 -- Stockage : compartiment public « publications » (vidéos MP4/WebM/MOV et aperçus, 50 Mo).
 
 -- Stockage : compartiment public « catalogue » (image/webp, image/png, image/jpeg, 3 Mo).
@@ -106,6 +113,48 @@ create table if not exists rate_hits (
 );
 create index if not exists rate_hits_key_at on rate_hits (key, at);
 alter table rate_hits enable row level security;
+
+-- Produits introuvables : un client a cherché un produit absent du catalogue (api/orders.js,
+-- `type: 'produit_introuvable'`). `enc` : la demande entière, chiffrée par le serveur (AES-256-GCM).
+create table if not exists product_requests (
+  id text primary key,
+  received_at timestamptz not null default now(),
+  enc text not null
+);
+alter table product_requests enable row level security;
+
+-- Vues, J'aime et commentaires des vidéos et publications photo (api/publications.js,
+-- `?public=reactions`). Une ligne par geste ; aucun e-mail ni téléphone.
+create table if not exists publication_reactions (
+  id bigserial primary key,
+  publication_id text not null,
+  kind text not null,             -- 'view' | 'like' | 'comment'
+  account_id text not null,
+  account_name text default '',
+  account_type text default 'particulier',
+  body text default '',           -- texte du commentaire
+  client_id text default '',      -- identifiant du commentaire côté application
+  at timestamptz default now(),
+  created_at timestamptz not null default now()
+);
+create index if not exists publication_reactions_account on publication_reactions (account_id);
+create index if not exists publication_reactions_pub on publication_reactions (publication_id);
+alter table publication_reactions enable row level security;
+
+-- Paniers en cours (api/orders.js, `type: 'panier'` ; GET `?vue=paniers`). Un panier par compte,
+-- remplacé à chaque envoi de l'application. `enc` : le panier entier (client, lignes, totaux),
+-- chiffré par le serveur comme les commandes. `updated_at` : dernière modification du panier.
+-- `status` : 'actif' | 'commande' (l'état « abandonné » se calcule à la lecture).
+create table if not exists carts (
+  account_id text primary key,
+  enc text not null,
+  updated_at timestamptz not null default now(),
+  status text not null default 'actif'
+);
+alter table carts enable row level security;
+revoke all on carts from anon, authenticated;
+-- Les routes /api (clé de service) y accèdent : droit explicite, comme pour les autres tables.
+grant all on carts to service_role;
 
 -- ───────────── Sécurité par ligne — À EXÉCUTER À LA MAIN avant une mise en production.
 -- Sans politique, seule la clé de service (routes /api) accède aux tables.

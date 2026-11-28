@@ -39,7 +39,7 @@ export function Choice<T extends string>({ label, value, onChange, options }: { 
  * et retirer. Le détail ne s'ouvre que sur demande : l'écran reste calme, quel que soit le nombre
  * de règles. Sur un écran étroit, les gestes passent sous le texte plutôt que de le couper.
  */
-export function RuleRow({ title, summary, chips, extra, onEdit, editLabel, editText = 'Modifier', onRemove, removeLabel, muted, id, thumb }: {
+export function RuleRow({ title, summary, chips, extra, onEdit, editLabel, editText = 'Modifier', onRemove, removeLabel, muted, id, thumb, lead }: {
   /** Mot du bouton : « Modifier » par défaut, « Traiter » pour une demande. */
   editText?: string;
   title: ReactNode;
@@ -56,11 +56,14 @@ export function RuleRow({ title, summary, chips, extra, onEdit, editLabel, editT
   id?: string;
   /** Vignette : adresse d'une photo, ou `null` pour l'emplacement vide. Absente : pas de vignette. */
   thumb?: string | null;
+  /** À la place de la vignette : une pastille (initiales d'un client, par exemple). */
+  lead?: ReactNode;
 }) {
   return (
     <div id={id} className="flex flex-wrap items-center gap-x-2 rounded-2xl border border-line bg-white/[0.03] py-1 pl-3.5 pr-1" data-regle="ligne">
       <div className="flex min-w-[128px] flex-1 items-center gap-3 py-1.5">
-        {thumb !== undefined && (
+        {lead}
+        {lead === undefined && thumb !== undefined && (
           <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-xl border border-line bg-black/30" data-regle="vignette">
             {thumb ? <img src={thumb} alt="" loading="lazy" className="h-full w-full object-contain" /> : <span aria-hidden className="text-[18px] leading-none text-fg-faint">+</span>}
           </span>
@@ -89,7 +92,7 @@ export function RuleRow({ title, summary, chips, extra, onEdit, editLabel, editT
 const ALL = COUNTRY_CODES.map((code) => ({ code, name: countryName(code), key: normalize(countryName(code)) })).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
 
 /** Les pays d'un groupe : ceux déjà choisis, et une recherche pour en ajouter. */
-function CountryList({ countries, taken, onChange, label, disabled, noun }: {
+export function CountryList({ countries, taken, onChange, label, disabled, noun }: {
   /** « prix » ou « réglage » : ce que l'on attribue à ces pays. */
   noun: string;
   countries: string[];

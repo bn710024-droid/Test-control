@@ -2,8 +2,10 @@ import crypto from 'node:crypto';
 import supabase from './db-client.js';
 import { preflight, requireAdmin, optionalAdmin, readBody, log, serverError } from './_lib.js';
 import { tooMany } from './_limit.js';
-import { vaultSeal, vaultOpen } from './_seal.js';
-import { resolveOffer, parseRules } from '../shared/catalog.js';
+import { vaultSeal, vaultOpen, sealRows } from './_seal.js';
+import { stampOf, sameButLocation } from '../shared/stamp.js';
+import { receiveCart, listCarts, updateCart, removeCart } from './_carts.js';
+import { resolveOffer, parseRules, isCountryCode } from '../shared/catalog.js';
 import { isRequestStatus, requestKey, requestStatusLabel } from '../shared/requests.js';
 import { clientNotice, isSenegal, PRO_STAGES, isProStage, proStageOf, proStageFromStatus, proStageLabel, statusOfProStage } from '../shared/orders.js';
 
@@ -36,6 +38,11 @@ import { clientNotice, isSenegal, PRO_STAGES, isProStage, proStageOf, proStageFr
  *  GET    `?vue=introuvables` : les demandes (équipe uniquement — elles portent un nom et un contact) ;
  *  PUT    `{ request: { id, status?, note? } }` : suivi par l'équipe ;
  *  DELETE `{ requestId }` : suppression définitive (responsables).
+ *
+ * Paniers en cours (api/_carts.js) — l'état complet du panier de l'application, un par compte :
+ *  POST   `{ type: 'panier', account: { id, secret, … }, lines, updatedAt }` : sans connexion ;
+ *  GET    `?vue=paniers` (équipe) ; PUT `{ cart: { id, contacted_via } }` (équipe) ;
+ *  DELETE `{ cartId }` (responsables).
  *
  * Les commandes contiennent des données personnelles : chaque ligne est chiffrée (AES-256-GCM)
  * avant d'être enregistrée. La table ne contient que du texte illisible sans la clé du serveur.
@@ -92,6 +99,32 @@ async function save(id, order, receivedAt) {
   if (error) throw error;
 }
 
+// ───────────── Écritures concurrentes
+// Une commande est un seul bloc chiffré : deux écritures simultanées (l'équipe change le statut,
+// l'application du client envoie sa position) feraient perdre la première. Chaque bloc commence par
+// « v1.iv.étiquette », propre à chaque écriture (IV aléatoire, étiquette GCM) : on ne remplace la
+// ligne que si elle commence encore par l'empreinte lue.
+
+async function loadOne(id) {
+  const { data: row, error } = await supabase.from('orders').select('*').eq('id', id).maybeSingle();
+  if (error) throw error;
+  const order = row ? vaultOpen(row.id, row.enc) : null;
+  return order ? { row, order } : null;
+}
+
+/** Remplace la commande seulement si personne ne l'a modifiée depuis sa lecture (`readEnc`). */
+async function saveIfUnchanged(id, order, readEnc) {
+  const { id: _id, received_at: _r, ...content } = order;
+  const { data, error } = await supabase
+    .from('orders')
+    .update({ enc: vaultSeal(id, content) })
+    .eq('id', id)
+    .like('enc', `${stampOf(readEnc)}.%`)
+    .select('id');
+  if (error) throw error;
+  return Array.isArray(data) && data.length === 1;
+}
+
 // ───────────── Livraison : le GP (transit international) et nos livreurs
 
 const LOGISTICS_REF = 'settings:logistics';
@@ -105,6 +138,8 @@ async function loadLogistics() {
     gp: { name: v?.gp?.name ?? '', whatsapp: v?.gp?.whatsapp ?? '' },
     // International : jusqu'où le GP livre par défaut. Chaque commande peut en décider autrement.
     gpDelivery: v?.gpDelivery === 'domicile' ? 'domicile' : 'aeroport',
+    // Pays où le GP livre (hors Sénégal, servi par nos livreurs) : publiés dans le catalogue.
+    gpCountries: Array.isArray(v?.gpCountries) ? v.gpCountries.filter((c) => isCountryCode(c)) : [],
     couriers: Array.isArray(v?.couriers) ? v.couriers : [],
   };
 }
@@ -133,7 +168,10 @@ function validateLogistics(src) {
       phone,
     });
   });
-  return { errors, value: { gp: { name: clip(src?.gp?.name, 60), whatsapp: wa ? `+${wa}` : '' }, gpDelivery: src?.gpDelivery === 'domicile' ? 'domicile' : 'aeroport', couriers } };
+  const asked = Array.isArray(src?.gpCountries) ? src.gpCountries.map((c) => String(c ?? '').toUpperCase()) : [];
+  if (asked.some((c) => !isCountryCode(c))) errors.gpCountries = 'Pays inconnu dans la liste des pays desservis par le GP.';
+  const gpCountries = [...new Set(asked.filter((c) => isCountryCode(c) && c !== 'SN'))].sort().slice(0, 80);
+  return { errors, value: { gp: { name: clip(src?.gp?.name, 60), whatsapp: wa ? `+${wa}` : '' }, gpDelivery: src?.gpDelivery === 'domicile' ? 'domicile' : 'aeroport', gpCountries, couriers } };
 }
 
 // ───────────── Réception depuis l'application d'achat
@@ -199,19 +237,76 @@ async function trackPosition(req, body, res) {
   const spot = positionOf(body);
   if (account.length < 6 || !reference) return res.status(400).json({ error: 'Compte ou référence manquant.' });
   if (!spot) return res.status(400).json({ error: 'Position illisible.' });
-  const order = (await loadAll()).find((o) => o.customer.account_id === account && o.number === reference);
-  if (!order) return res.status(404).json({ error: 'Commande introuvable.' });
+  const found = (await loadAll()).find((o) => o.customer.account_id === account && o.number === reference);
+  if (!found) return res.status(404).json({ error: 'Commande introuvable.' });
+  const ended = (o) => o.status === 'livree' || o.status === 'annulee';
   // Une commande reçue ou annulée n'est plus suivie : la position n'est plus enregistrée.
-  if (order.status === 'livree' || order.status === 'annulee') return res.status(200).json({ ok: true, tracking: false });
+  if (ended(found)) return res.status(200).json({ ok: true, tracking: false });
   // Au plus une écriture toutes les quinze secondes par commande.
-  const last = order.location?.at ? new Date(order.location.at).getTime() : 0;
-  if (Date.now() - last >= 15000) await save(order.id, { ...order, location: spot });
-  return res.status(200).json({ ok: true, tracking: true });
+  const last = found.location?.at ? new Date(found.location.at).getTime() : 0;
+  if (Date.now() - last < 15000) return res.status(200).json({ ok: true, tracking: true });
+  // La position est posée sur la copie la plus récente, et seulement si elle n'a pas bougé entre la
+  // lecture et l'écriture : un changement de statut fait au même moment par l'équipe est conservé.
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const fresh = await loadOne(found.id);
+    if (!fresh) return res.status(404).json({ error: 'Commande introuvable.' });
+    if (ended(fresh.order)) return res.status(200).json({ ok: true, tracking: false });
+    if (await saveIfUnchanged(found.id, { ...fresh.order, location: spot }, fresh.row.enc)) {
+      return res.status(200).json({ ok: true, tracking: true });
+    }
+  }
+  // Commande très sollicitée : cette position est abandonnée, la suivante sera enregistrée.
+  return res.status(200).json({ ok: true, tracking: true, saved: false });
+}
+
+const FREQUENCIES = ['hebdomadaire', 'mensuelle', 'ponctuelle'];
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Programme d'un acheteur pro (fiche pro › « Faire un programme ») : une quantité étalée dans le
+ * temps. Compte obligatoire. Rangé comme une demande pro (`type: 'pro'`, `kind: 'programme'`) et
+ * suivi avec les mêmes étapes (intérêt reçu → contacté → en discussion → contrat conclu…).
+ */
+function programmeOf(body) {
+  const g = body.programme && typeof body.programme === 'object' ? body.programme : {};
+  const quantity = num(g.quantity);
+  if (!quantity || quantity <= 0) return { error: 'Indiquez la quantité totale du programme.' };
+  const unit = ['kg', 'tonnes', 'conteneurs'].includes(g.unit) ? g.unit : 'tonnes';
+  const start = DAY.test(String(g.start ?? '')) ? g.start : null;
+  const end = DAY.test(String(g.end ?? '')) ? g.end : null;
+  if (!start) return { error: 'Indiquez la date de début du programme.' };
+  if (end && end < start) return { error: 'La fin du programme doit suivre son début.' };
+  const value = {
+    calibres: (Array.isArray(g.calibres) ? g.calibres : []).slice(0, 20).map((c) => clip(c, 40)).filter(Boolean),
+    packaging: clip(g.packaging, 120),
+    quantity: round2(quantity),
+    unit,
+    start,
+    end,
+    frequency: FREQUENCIES.includes(g.frequency) ? g.frequency : 'ponctuelle',
+    destination: { country: clip(g.destination?.country, 60), place: clip(g.destination?.place, 80) },
+    details: clip(g.details, 600),
+  };
+  const line = {
+    product_id: clip(g.productId ?? body.productId, 60),
+    name: clip(g.product ?? body.product, 80) || 'Produit',
+    mode: null,
+    qty: unit === 'tonnes' ? round2(quantity * 1000) : value.quantity,
+    unit: unit === 'conteneurs' ? 'conteneur' : 'kg',
+    noun: null,
+    kg: unit === 'kg' ? value.quantity : unit === 'tonnes' ? round2(quantity * 1000) : null,
+    unit_price: null,
+    total: null,
+  };
+  return { value, line };
 }
 
 function fromPayload(body) {
-  const pro = body.type === 'demande_professionnelle';
-  const lines = linesOf(body.lines);
+  const programme = body.type === 'programme' ? programmeOf(body) : null;
+  if (programme?.error) return { error: programme.error };
+  if (programme && !String(body.customer?.accountId ?? '').trim()) return { error: 'Un programme se fait depuis un compte : connectez-vous d’abord.' };
+  const pro = body.type === 'demande_professionnelle' || !!programme;
+  const lines = programme ? [programme.line] : linesOf(body.lines);
   if (lines.length === 0) return { error: 'La commande ne contient aucune ligne lisible.' };
   const c = body.customer && typeof body.customer === 'object' ? body.customer : {};
   const customer = {
@@ -234,11 +329,12 @@ function fromPayload(body) {
   return {
     order: {
       type: pro ? 'pro' : 'particulier',
+      ...(programme ? { kind: 'programme', programme: programme.value } : null),
       number: clip(body.reference, 40) || 'Sans numéro',
       created_at: createdAt,
       is_example: false,
       customer,
-      address: clip(pro ? body.destination : body.address, 300),
+      address: clip(programme ? [programme.value.destination.place, programme.value.destination.country].filter(Boolean).join(', ') : pro ? body.destination : body.address, 300),
       country: clip(body.country, 60),
       lines,
       incoterm: pro ? (body.incoterm === 'FOB' ? 'FOB' : 'EXW') : null,
@@ -249,6 +345,10 @@ function fromPayload(body) {
       // Moyen choisi par le client. Le paiement lui-même n'est jamais cru sur parole : aucun
       // prestataire n'est relié, c'est l'équipe qui pointe l'argent reçu.
       payment: pro ? null : choiceOf(body.payment),
+      // Devise de la commande (ISO 4217), telle que l'application l'a calculée : jamais convertie.
+      currency: /^[A-Z]{3}$/.test(String(body.currency ?? '')) ? body.currency : 'EUR',
+      // Commande passée pour un proche : lien de localisation éventuel fourni par le client.
+      ...(pro ? null : { for_self: body.forSelf !== false, location_link: clip(body.locationLink, 300) }),
       note: clip(body.note, 600),
       status: 'attente',
       status_at: new Date().toISOString(),
@@ -523,6 +623,8 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       // Demandes de produits introuvables : réservées à l'équipe, elles portent un nom et un contact.
+      // Paniers en cours : réservés à l'équipe (api/_carts.js).
+      if (req.query?.vue === 'paniers') return await listCarts(req, res, { loadOrders: loadAll });
       if (req.query?.vue === 'introuvables') {
         const admin = await optionalAdmin(req);
         res.setHeader('Cache-Control', 'no-store');
@@ -572,9 +674,11 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const body = readBody(req);
-      if (body.type === 'commande' || body.type === 'demande_professionnelle') return receive(req, body, res);
-      if (body.type === 'produit_introuvable') return receiveRequest(req, body, res);
-      if (body.action === 'position') return trackPosition(req, body, res);
+      // `await` : une erreur est rattrapée ici (réponse 500 propre, en-têtes CORS compris).
+      if (body.type === 'commande' || body.type === 'demande_professionnelle' || body.type === 'programme') return await receive(req, body, res);
+      if (body.type === 'produit_introuvable') return await receiveRequest(req, body, res);
+      if (body.type === 'panier') return await receiveCart(req, body, res, { loadOrders: loadAll });
+      if (body.action === 'position') return await trackPosition(req, body, res);
       if (body.action === 'examples') {
         const admin = await requireAdmin(req, res, { owner: true });
         if (!admin) return;
@@ -589,6 +693,9 @@ export default async function handler(req, res) {
       const admin = await requireAdmin(req, res);
       if (!admin) return;
       const body = readBody(req);
+
+      // Panier en cours : le client a été relancé (api/_carts.js).
+      if (body.cart && typeof body.cart === 'object') return await updateCart(admin, body.cart, res, { loadOrders: loadAll });
 
       // Suivi d'une demande de produit introuvable : son étape, et la note interne de l'équipe.
       if (body.request && typeof body.request === 'object') {
@@ -623,6 +730,15 @@ export default async function handler(req, res) {
           .from('settings')
           .upsert({ key: 'logistics', value: { enc: vaultSeal(LOGISTICS_REF, value) }, updated_at: new Date().toISOString() }, { onConflict: 'key' });
         if (saveError) throw saveError;
+        // Copie publique et scellée de ce que le catalogue publie : pays du GP et modalité (rien de
+        // personnel — le nom et le numéro du GP restent chiffrés ci-dessus).
+        const { data: gpRow, error: gpError } = await supabase
+          .from('settings')
+          .upsert({ key: 'gp', value: { countries: value.gpCountries, delivery: value.gpDelivery }, updated_at: new Date().toISOString() }, { onConflict: 'key' })
+          .select()
+          .single();
+        if (gpError) throw gpError;
+        await sealRows('settings', [gpRow]);
         await log(admin, 'update', 'order', null, 'Livraison : GP et livreurs mis à jour');
         return res.status(200).json(value);
       }
@@ -761,7 +877,19 @@ export default async function handler(req, res) {
       }
 
       if (changes.length > 0) {
-        await save(row.id, next);
+        // Écriture conditionnelle : si la commande a changé depuis sa lecture, on ne reprend que la
+        // nouvelle position du client ; tout autre changement (un autre membre de l'équipe) est refusé.
+        let saved = await saveIfUnchanged(row.id, next, row.enc);
+        for (let attempt = 0; !saved && attempt < 2; attempt += 1) {
+          const fresh = await loadOne(row.id);
+          if (!fresh) return res.status(404).json({ error: 'Commande introuvable : elle a peut-être été supprimée.' });
+          if (!sameButLocation(fresh.order, current)) {
+            return res.status(409).json({ error: 'Cette commande vient d’être modifiée par ailleurs : rechargez la page, puis recommencez.' });
+          }
+          next.location = fresh.order.location;
+          saved = await saveIfUnchanged(row.id, next, fresh.row.enc);
+        }
+        if (!saved) return res.status(409).json({ error: 'Cette commande vient d’être modifiée par ailleurs : rechargez la page, puis recommencez.' });
         await log(admin, 'update', 'order', row.id, `Commande ${current.number} : ${changes.join(', ')}`);
       }
       return res.status(200).json({ ...next, id: row.id, received_at: row.received_at, delivery_mode: deliveryMode(next, (await loadLogistics()).gpDelivery) });
@@ -771,6 +899,7 @@ export default async function handler(req, res) {
       const admin = await requireAdmin(req, res, { owner: true });
       if (!admin) return;
       const body = readBody(req);
+      if (body.cartId !== undefined) return await removeCart(admin, body.cartId, res);
       if (body.requestId !== undefined) {
         const { data: row, error } = await supabase.from(REQUESTS).select('*').eq('id', String(body.requestId)).maybeSingle();
         if (error) throw error;

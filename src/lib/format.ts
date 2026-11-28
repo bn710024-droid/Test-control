@@ -7,6 +7,22 @@ export const euro = (n: number) => {
   return `${group(whole)},${cents}\u00A0€`;
 };
 
+/**
+ * Montant dans la devise de la commande (comme l'application) : EUR → « 3,90 € », XOF / XAF →
+ * « 2 500 F CFA », autre code ISO → « 12,00 USD ». Jamais de conversion.
+ */
+export const amount = (n: number, currency?: string | null) => {
+  const code = (currency || 'EUR').toUpperCase();
+  if (code === 'EUR') return euro(n);
+  if (code === 'XOF' || code === 'XAF') return `${group(String(Math.round(n)))} F CFA`;
+  if (code === 'USD') {
+    const [w, c] = n.toFixed(2).split('.');
+    return `${group(w)},${c} $`;
+  }
+  const [whole, cents] = n.toFixed(2).split('.');
+  return `${group(whole)},${cents} ${code}`;
+};
+
 export const MONTHS = [
   'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
   'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',

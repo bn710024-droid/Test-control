@@ -1,13 +1,15 @@
 import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { add, airplaneOutline, boatOutline, heart, imageOutline, leaf } from '../lib/glyphs';
+import { add } from '../lib/glyphs';
 import { Icon } from './Icon';
 import { Chip, Switch } from './ui';
 import { useData, type Category, type Product } from '../contexts/DataContext';
-import { MONTHS, MONTH_INITIALS, currentMonth, euro, unitTiny } from '../lib/format';
+import { MONTHS, MONTH_INITIALS, currentMonth, euro, plural, unitTiny } from '../lib/format';
 import { cx, fit, glow, roundSize } from '../lib/ui';
 import type { Mode, ProductRow } from '../../shared/catalog.js';
 import { zoneLabel } from '../../shared/catalog.js';
+import { sp } from '../lib/space';
+import { PRO_GROUPS, proPriceText } from '../../shared/pro.js';
 
 
 /** Photo détourée d'un produit sur son halo de teinte — jamais déformée, jamais sur fond plein. */
@@ -195,6 +197,19 @@ export function SeasonStrip({ months, tint, onToggle }: { months: number[]; tint
 
 /** Prix affiché d'un produit dans l'administration. Rien n'est inventé : un prix absent se dit. */
 export function priceInfo(p: Product): { text: string; unit: string; missing: boolean } {
+  if (p.space === 'b2b') {
+    // Pros : le premier prix EXW proposé (avec sa devise), sinon « Prix sur demande ».
+    const offers = (p.pro?.offers ?? []).filter((o) => o.active !== false);
+    if (offers.length === 0) return { text: 'Aucune offre', unit: '', missing: true };
+    for (const o of offers) {
+      for (const g of PRO_GROUPS) {
+        const row = o.groups?.[g.id];
+        if (row?.offered && row.EXW !== null) return { text: `EXW ${proPriceText(row.EXW, g.currency)}`, unit: 'le kg', missing: false };
+      }
+    }
+    return { text: 'Prix sur demande', unit: '', missing: false };
+  }
+  if (p.retail?.kind === 'emballe') return { text: `${plural(p.packagings?.length ?? 0, 'emballage', 'emballages')}`, unit: '', missing: (p.packagings?.length ?? 0) === 0 };
   if (p.retail && p.retail.price !== null) {
     return { text: euro(p.retail.price), unit: p.retail.unit === 'kg' ? 'le kg' : unitTiny(p.retail.unitLabel), missing: false };
   }
@@ -210,8 +225,8 @@ export function StatusChips({ product, max = 5 }: { product: Product; max?: numb
   if (product._seal && product._seal !== 'ok') chips.push(<Chip key="seal" tone="danger">À valider</Chip>);
   if (product.archived) chips.push(<Chip key="arch">Archivé</Chip>);
   // Où le produit s'affiche : toujours écrit, pour le lire sans ouvrir la fiche.
-  if (product.zone) chips.push(<Chip key="zone" tone={product.zone.mode === 'all' ? 'neutral' : 'leaf'}>{zoneLabel(product.zone, true)}</Chip>);
-  if ((product.retail?.countryPrices?.length ?? 0) > 0 || product.wholesale.some((o) => (o.countryPrices?.length ?? 0) > 0)) chips.push(<Chip key="prix-pays">Prix par pays</Chip>);
+  if (product.zone && product.space !== 'b2b') chips.push(<Chip key="zone" tone={product.zone.mode === 'all' ? 'neutral' : 'leaf'}>{zoneLabel(product.zone, true)}</Chip>);
+  if ((product.retail?.countryPrices?.length ?? 0) > 0) chips.push(<Chip key="prix-pays">Prix par pays</Chip>);
   if (issues.length > 0) chips.push(<Chip key="todo" tone="star">À compléter · {issues.length}</Chip>);
   if (product.is_example) chips.push(<Chip key="ex">Exemple</Chip>);
   if (chips.length === 0) return null;
@@ -221,11 +236,11 @@ export function StatusChips({ product, max = 5 }: { product: Product; max?: numb
 /** Ligne de la liste des produits : photo, nom, prix, état — et l'interrupteur de visibilité. */
 export function ProductRowCard({ product: p, onToggle, busy }: { product: Product; onToggle: (next: boolean) => void; busy?: boolean }) {
   const price = priceInfo(p);
-  const modes = p.wholesale.map((o) => o.mode).filter((m): m is Mode => !!m);
+  const modes = (p.space === 'b2b' ? (p.pro?.offers ?? []).filter((o) => o.active !== false && o.mode !== 'standard').map((o) => o.mode) : []).filter((m): m is Mode => m === 'avion' || m === 'bateau');
   const sub = [p.variety, p.origin].filter(Boolean).join(' · ');
   return (
     <article className={cx('card flex items-center gap-1 p-2.5 pr-3.5', p.archived && 'opacity-70')}>
-      <Link to={`/produits/${p.id}`} className="press flex min-w-0 flex-1 items-center gap-3" aria-label={`Ouvrir la fiche ${p.name}`}>
+      <Link to={sp(`/produits/${p.id}`)} className="press flex min-w-0 flex-1 items-center gap-3" aria-label={`Ouvrir la fiche ${p.name}`}>
         <ProductArt product={p} size={74} />
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-1.5">

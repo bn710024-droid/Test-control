@@ -4,8 +4,6 @@ import {
   airplaneOutline,
   boatOutline,
   checkmarkCircle,
-  copyOutline,
-  eyeOutline,
   cubeOutline,
   keyOutline,
   linkOutline,
@@ -24,6 +22,11 @@ import { ApiError, api, messageOf } from '../lib/api';
 import { ago, initials, kgText, numStr, parseNum, plural } from '../lib/format';
 import { cx } from '../lib/ui';
 import { DEFAULT_RULES, parseCatalog, validateRules, type Errors, type QuantityRules } from '../../shared/catalog.js';
+import { PAYMENT_METHODS, paymentStates } from '../../shared/payments.js';
+import { TRANSPORT_ZONES, transportZonesOf, validateTransport, type TransportZone } from '../../shared/transport.js';
+import { CURRENCIES, CURRENCY_SIGN, ZONE_LABEL } from '../../shared/zones.js';
+import { useSpace } from '../lib/space';
+import { ProTermsBlock } from '../components/ProTermsBlock';
 
 type Member = { user_id: string; email: string; provider: string; role: 'owner' | 'editor' | 'pending'; since: string | null };
 type Credit = { id: string; title: string; artist: string; license: string; url: string };
@@ -89,7 +92,8 @@ type Report =
 export default function Settings() {
   const { user, access, isOwner, canEdit, signOut } = useAuth();
   const navigate = useNavigate();
-  const { products, settings, loading, error, reload, pendingRefs, saveRules, saveLink, sealRefs } = useData();
+  const { products, settings, loading, error, reload, pendingRefs, saveRules, saveLink, savePayments, saveTransport, sealRefs } = useData();
+  const { space } = useSpace();
   const toast = useToast();
   const [params] = useSearchParams();
   const provider = access.status === 'ready' ? access.provider : 'email';
@@ -150,8 +154,41 @@ export default function Settings() {
     />
   );
 
+  // ───── Forfait transport des particuliers : par zone de destination, un montant par devise de client
+  const feesToForm = (zones: TransportZone[]) => Object.fromEntries(zones.flatMap((z) => CURRENCIES.map((c) => [`${z.id}.${c}`, numStr(z.fees[c])])));
+  const storedFees = transportZonesOf(settings?.transport);
+  const feesKey = JSON.stringify(storedFees);
+  const [fees, setFees] = useState<Record<string, string>>(() => feesToForm(storedFees));
+  const [feeErrors, setFeeErrors] = useState<Errors>({});
+  const [savingFees, setSavingFees] = useState(false);
+  useEffect(() => {
+    setFees(feesToForm(JSON.parse(feesKey)));
+  }, [feesKey]);
+  const feesDirty = JSON.stringify(fees) !== JSON.stringify(feesToForm(storedFees));
+
+  const submitFees = async () => {
+    const asked = Object.fromEntries(TRANSPORT_ZONES.map((z) => [z.id, Object.fromEntries(CURRENCIES.map((c) => [c, parseNum(fees[`${z.id}.${c}`] ?? '')]))]));
+    const { errors, value } = validateTransport(asked);
+    setFeeErrors(errors);
+    if (Object.keys(errors).length > 0) {
+      toast(`${plural(Object.keys(errors).length, 'valeur à corriger', 'valeurs à corriger')}`, { tone: 'error' });
+      return;
+    }
+    setSavingFees(true);
+    try {
+      await saveTransport(value);
+      toast('Forfaits de transport enregistrés');
+    } catch (err) {
+      if (err instanceof ApiError && err.fields) setFeeErrors(err.fields);
+      toast(`Non enregistré. ${messageOf(err)}`, { tone: 'error' });
+    } finally {
+      setSavingFees(false);
+    }
+  };
+
   // ───── Publication
-  const endpoint = `${window.location.origin}/api/catalog`;
+  // Adresse lue par l'application (format de l'application, schema 2). Sans `?v=2` : format historique.
+  const endpoint = `${window.location.origin}/api/catalog?v=2`;
   const [report, setReport] = useState<Report>({ state: 'idle' });
   const [linking, setLinking] = useState(false);
 
@@ -199,6 +236,22 @@ export default function Settings() {
       toast(messageOf(err), { tone: 'error' });
     } finally {
       setLinking(false);
+    }
+  };
+
+  // ───── Moyens de paiement proposés aux particuliers
+  const payStates = paymentStates(settings?.payments);
+  const [paying, setPaying] = useState<string | null>(null);
+  const setPayment = async (id: string, on: boolean) => {
+    setPaying(id);
+    try {
+      await savePayments({ ...payStates, [id]: on });
+      const name = PAYMENT_METHODS.find((m) => m.id === id)?.title ?? id;
+      toast(on ? `${name} proposé aux clients` : `${name} retiré de l’application`);
+    } catch (err) {
+      toast(messageOf(err), { tone: 'error' });
+    } finally {
+      setPaying(null);
     }
   };
 
@@ -310,7 +363,7 @@ export default function Settings() {
 
   return (
     <Page>
-      <PageHeader title="Réglages" subtitle="Compte, publication, règles des offres et accès de l’équipe." />
+      <PageHeader title="Réglages" subtitle={space === 'b2b' ? 'Espace Pros : règles des offres, conditions et logistique. Équipe et accès : communs.' : 'Espace Particuliers : paiement et transport. Équipe et accès : communs.'} />
 
       {/* ───── Compte */}
       <section className="card mx-5 flex items-center gap-3.5 p-4" aria-label="Mon compte">
@@ -348,7 +401,7 @@ export default function Settings() {
             <Block id="publication" title="Publication" aside={<Chip tone={linked ? 'leaf' : 'neutral'} icon={linked ? checkmarkCircle : linkOutline}>{linked ? 'Reliée' : 'Non reliée'}</Chip>}>
               <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
                 Chaque enregistrement met à jour le catalogue publié à cette adresse, au format attendu par l’application d’achat
-                (lib/catalog/schema.ts, schema 1).
+                (lib/catalog/schema.ts, schema 2, adresse ?v=2).
               </p>
               <div className="mt-3 flex items-center gap-2 rounded-2xl border border-line bg-black/25 p-1.5 pl-3.5">
                 <code className="min-w-0 flex-1 truncate text-[13px] text-fg">{endpoint}</code>
@@ -408,20 +461,19 @@ export default function Settings() {
                 <div className="mt-3 rounded-2xl bg-black/25 p-3.5">
                   <p className="text-[14.5px] font-bold leading-5">Brancher l’application mobile</p>
                   <p className="mt-1 text-[13px] leading-[19px] text-fg-dim">
-                    L’application est un projet à part : elle ne change que lorsqu’on y applique ce correctif et qu’on la republie. Il a été préparé sur le dépôt public de l’application (commit 448f833) : si elle a changé depuis, il est à refaire sur son code à jour. Ensuite, produits, prix, rayons,
-                    publications, commandes et statuts s’y répercutent seuls, en une minute au plus. Il contient aussi le filtre des produits par pays et, au Sénégal, la demande de localisation à la confirmation du panier.
+                    L’application est un projet à part. Elle se relie à cette tour par une seule adresse, la variable{' '}
+                    <code className="text-fg">EXPO_PUBLIC_CONTROL_TOWER_URL</code>. Ensuite, produits, prix, emballages, rayons, annonces, vidéos,
+                    commandes, demandes et statuts s’y répercutent seuls, en une minute au plus. L’ancien correctif (git apply) ne s’applique plus
+                    à l’application actuelle : ne l’utilisez pas.
                   </p>
                   <ol className="mt-2.5 list-decimal space-y-1 pl-5 text-[13px] leading-[19px] text-fg-dim">
-                    <li>Télécharger le correctif et le placer dans le dossier de l’application.</li>
                     <li>
-                      Lancer <code className="text-fg">git apply app-tropicaura.patch</code>.
+                      Dans l’application, définir <code className="text-fg">EXPO_PUBLIC_CONTROL_TOWER_URL={window.location.origin}</code> (fichier
+                      .env.local, variables Vercel pour le web, eas.json pour les téléphones).
                     </li>
                     <li>Republier l’application.</li>
                   </ol>
                   <div className="mt-3 flex flex-wrap gap-2.5">
-                    <a href="/branchement/app-tropicaura.patch" download className="press flex min-h-11 items-center rounded-full bg-leaf px-4 text-[13.5px] font-extrabold text-on-leaf">
-                      Télécharger le correctif
-                    </a>
                     <a href="/branchement/LISEZ-MOI.txt" target="_blank" rel="noreferrer noopener" className="press flex min-h-11 items-center rounded-full border border-line-strong px-4 text-[13.5px] font-bold">
                       Lire les instructions
                     </a>
@@ -429,7 +481,7 @@ export default function Settings() {
                       compact
                       label="Copier la consigne"
                       onClick={async () => {
-                        const text = `Applique au dépôt de l’application TROPICAURA le correctif ${window.location.origin}/branchement/app-tropicaura.patch (git apply), en suivant ${window.location.origin}/branchement/LISEZ-MOI.txt. Vérifie que CONTROL_TOWER vaut ${window.location.origin} dans lib/config.ts, lance npx tsc --noEmit, puis republie l’application.`;
+                        const text = `Dans le dépôt de l’application TROPICAURA, définis EXPO_PUBLIC_CONTROL_TOWER_URL=${window.location.origin} (fichier .env.local en local, variables d’environnement Vercel pour le web, eas.json pour iOS et Android), lance npx tsc --noEmit, puis republie l’application. N’applique pas l’ancien correctif app-tropicaura.patch.`;
                         try {
                           await navigator.clipboard.writeText(text);
                           toast('Consigne copiée : collez-la dans le projet de l’application');
@@ -484,8 +536,91 @@ export default function Settings() {
           </div>
 
           <div className="min-w-0">
+            {/* ───── Moyens de paiement */}
+            {space === 'b2c' && (<>
+            <Block id="paiements" title="Moyens de paiement">
+              <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
+                Moyens proposés aux particuliers à la validation de commande, publiés dans le catalogue. Aucun n’est encaissé par
+                l’application : l’équipe pointe le paiement reçu dans Commandes.{!isOwner && ' Seul un responsable peut les modifier.'}
+              </p>
+              {PAYMENT_METHODS.map((m) => {
+                const on = payStates[m.id];
+                const last = on && Object.values(payStates).filter(Boolean).length === 1;
+                return (
+                  <div key={m.id} className="mt-4 border-t border-line pt-4">
+                    <div className="flex items-center gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[15px] font-bold leading-5">{m.title}</p>
+                        <p className="mt-0.5 text-[13px] leading-[18px] text-fg-dim">
+                          {m.detail}
+                          {last ? ' · dernier moyen proposé : il reste activé.' : ''}
+                        </p>
+                      </div>
+                      <Switch
+                        checked={on}
+                        onChange={(v) => setPayment(m.id, v)}
+                        disabled={!isOwner || last || (paying !== null && paying !== m.id)}
+                        busy={paying === m.id}
+                        label={m.title}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </Block>
+
+            {/* ───── Transport des particuliers */}
+            <Block id="transport" title="Transport des particuliers">
+              <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
+                Forfait ajouté à une commande « avec transport », selon le pays de livraison. Le client paie dans la devise de son pays : un
+                montant par devise, case vide = tarif à confirmer.{!isOwner && ' Seul un responsable peut les modifier.'}
+              </p>
+              {TRANSPORT_ZONES.map((z) => (
+                <div key={z.id} className="mt-3.5 border-t border-line pt-1">
+                  <p className="mt-2.5 text-[14.5px] font-bold leading-5">Vers {z.label}</p>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {CURRENCIES.map((c) => {
+                      const key = `${z.id}.${c}`;
+                      return (
+                        <Field
+                          key={key}
+                          label={ZONE_LABEL[c]}
+                          compact
+                          inputMode={c === 'XOF' ? 'numeric' : 'decimal'}
+                          suffix={CURRENCY_SIGN[c]}
+                          disabled={!isOwner}
+                          placeholder="—"
+                          value={fees[key] ?? ''}
+                          onValue={(v) => {
+                            setFees((f) => ({ ...f, [key]: v }));
+                            setFeeErrors((e) => (e[key] ? { ...e, [key]: '' } : e));
+                          }}
+                          error={feeErrors[key] || undefined}
+                          className="pr-[64px]"
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+              {isOwner && (
+                <div className="mt-5 flex flex-wrap items-center gap-2.5">
+                  <PrimaryButton className="!w-auto min-w-[200px] flex-1" label="Enregistrer les forfaits" disabled={!feesDirty && !!settings?.transport} loading={savingFees} onClick={submitFees} />
+                  {feesDirty && <GhostButton label="Annuler" onClick={() => { setFees(feesToForm(storedFees)); setFeeErrors({}); }} />}
+                </div>
+              )}
+              {feesDirty && <p className="mt-2.5 text-center text-[12.5px] font-semibold text-star" role="status">Modifications non enregistrées</p>}
+            </Block>
+
+            </>)}
+
+            {space === 'b2b' && (<>
+            <Block id="conditions" title="Conditions et logistique par défaut">
+              <ProTermsBlock />
+            </Block>
+
             {/* ───── Règles de quantité */}
-            <Block id="regles" title="Règles des offres pro">
+            <Block id="regles" title="Règles avion, bateau et standard">
               <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
                 Règles générales, publiées dans le catalogue. Une offre peut avoir ses propres valeurs, réglées dans la fiche du produit.
                 {!isOwner && ' Seul un responsable peut les modifier.'}
@@ -543,7 +678,9 @@ export default function Settings() {
               {rulesDirty && <p className="mt-2.5 text-center text-[12.5px] font-semibold text-star" role="status">Modifications non enregistrées</p>}
             </Block>
 
-            {/* ───── Équipe */}
+            </>)}
+
+            {/* ───── Équipe (commun aux deux espaces) */}
             {isOwner && (
               <Block id="equipe" title="Équipe et accès" aside={pendingMembers.length > 0 ? <Chip tone="star">{plural(pendingMembers.length, 'demande', 'demandes')}</Chip> : undefined}>
                 <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">

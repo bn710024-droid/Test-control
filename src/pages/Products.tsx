@@ -11,6 +11,7 @@ import { messageOf } from '../lib/api';
 import { currentMonth, normalize, plural } from '../lib/format';
 import { cx } from '../lib/ui';
 import { COUNTRY_CODES, countryName, zoneAllows } from '../../shared/catalog.js';
+import { sp } from '../lib/space';
 
 /** Tous les pays sauf le Sénégal (placé en tête de liste), par ordre alphabétique. */
 const COUNTRIES = COUNTRY_CODES.filter((code) => code !== 'SN')
@@ -71,7 +72,7 @@ export default function Products() {
       case 'masques': return !p.available;
       case 'a-completer': return issuesOf(p).length > 0;
       case 'exemple': return p.is_example;
-      case 'pro': return p.wholesale.length > 0;
+      case 'pro': return (p.pro?.offers ?? []).length > 0;
       case 'saison': return p.available && p.months.includes(month);
       case 'a-valider': return !!p._seal && p._seal !== 'ok';
       default: return true;
@@ -109,7 +110,7 @@ export default function Products() {
       } else {
         toast(result?.error ?? 'Modification refusée.', {
           tone: 'error',
-          action: { label: 'Ouvrir la fiche', onPress: () => navigate(`/produits/${p.id}`) },
+          action: { label: 'Ouvrir la fiche', onPress: () => navigate(sp(`/produits/${p.id}`)) },
         });
       }
     } catch (err) {
@@ -128,7 +129,7 @@ export default function Products() {
         title="Produits"
         accent={rayonLabel ? rayonLabel.toLowerCase() : undefined}
         subtitle={loading ? 'Lecture du catalogue…' : `${plural(list.length, 'fiche', 'fiches')}${filtered ? ' dans cette sélection' : ' au catalogue'}`}
-        right={<RoundButton icon={add} label="Ajouter un produit" solid size={48} onClick={() => navigate('/produits/nouveau')} />}
+        right={<RoundButton icon={add} label="Ajouter un produit" solid size={48} onClick={() => navigate(sp('/produits/nouveau'))} />}
       />
 
       <div className="flex flex-col gap-3 px-5 sm:flex-row">
@@ -212,7 +213,7 @@ export default function Products() {
           {list.length === 0 ? (
             <div className="mt-4">
               {products.length === 0 ? (
-                <EmptyState title="Catalogue vide" body="Aucun produit n’est enregistré. Ajoutez le premier pour commencer." cta="Ajouter un produit" onPress={() => navigate('/produits/nouveau')} />
+                <EmptyState title="Catalogue vide" body="Aucun produit n’est enregistré. Ajoutez le premier pour commencer." cta="Ajouter un produit" onPress={() => navigate(sp('/produits/nouveau'))} />
               ) : (
                 <EmptyState
                   title="Rien à ce nom-là"

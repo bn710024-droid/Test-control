@@ -4,6 +4,39 @@ Espace d'administration du catalogue de l'application d'achat
 (`bn710024-droid/app-tropicaura`, analysée au commit `448f833`). Application distincte : le dépôt
 de l'application d'achat n'est pas modifié.
 
+## Nuit du 27/11/2026 — branchement réel de l'application (branche `nuit-branchement`)
+
+**Fait**
+- `GET /api/catalog?v=2` : catalogue **au format de l'application** (`schema: 2`,
+  `shared/catalog-v2.js`) — `formats` (emballages : contenu en grammes, prix de l'emballage
+  entier, `null` conservé, réglages par pays), `visibility`, `campaigns`, `delivery.gp`, plus
+  `categories`, `filters`, `payments`, `productRequest`, `countryPrices`. Sans `v` : document
+  historique inchangé. Test de contrat : `node scripts/test-catalog-v2.mjs` (12/12).
+- Livraison GP par pays : Commandes › Livraison › « Pays desservis par le GP », publiés dans
+  `delivery.gp` (copie publique scellée `settings.gp`, rien de personnel).
+- Commandes : devise (`currency`) et « pour un proche » enregistrées ; montants affichés dans la
+  devise de la commande (F CFA…) ; statistiques et clients : les sommes en € ne comptent que les
+  commandes en € (« N commande(s) dans une autre devise, non comptée(s) »).
+- Emballages publiés avec un libellé d'unité neutre (« par cagette de 5 kg »).
+- Textes devenus faux corrigés : plus de « appliquez le correctif » (le correctif
+  `public/branchement/app-tropicaura.patch` est **obsolète**, voir LISEZ-MOI), adresse `?v=2`,
+  variable `EXPO_PUBLIC_CONTROL_TOWER_URL`.
+- `npm run local` : tour complète (API + front) sur http://localhost:3000 **sans Supabase**,
+  base locale `.local-db/` remplie avec le catalogue d'exemple de l'application. Développement
+  et tests uniquement.
+- `supabase/schema.sql` : tables `product_requests` et `publication_reactions` documentées.
+- Lint : 0 erreur (typographie française tolérée) ; import `.vite-source-tags.js` retiré ;
+  paquet renommé `tropicaura-tour` ; `.env.example` (noms des variables, sans valeurs).
+
+**Testé réellement** (Chromium, 1440×900, tour locale) : `npm run build` OK ; 13 pages et
+17 gestes sans erreur console / réseau ; bout en bout avec l'application (dépôt
+Test-app-tropicaura, `scripts/test_tower_live.py`, 36/36) ; fiche produit modifiée et
+enregistrée via l'interface (scellé valide). **Non testé** : base Supabase réelle,
+déploiement Vercel.
+
+**Restant** : `ERREURS.md` (statistiques multi-devises, annonce image sans produit…) et
+`A-CONNECTER.md` du dépôt de l'application (variables, tables, sécurité).
+
 ## Ce que fait cette administration
 
 - Produits : liste, recherche, filtres, fiche complète, photo, prix, unité, saison, visibilité.

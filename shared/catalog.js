@@ -1,3 +1,4 @@
+import { CURRENCIES, CURRENCY_SIGN } from './zones.js';
 /**
  * Règles communes à l'administration (navigateur) et à ses routes serveur.
  *
@@ -7,6 +8,8 @@
  * Les contrôles de saisie (`validateProduct`, `validateCategory`, `validateRules`) sont exécutés
  * deux fois : dans le formulaire pour expliquer l'erreur, puis sur le serveur qui a le dernier mot.
  */
+
+import { proToDoc } from './pro.js';
 
 export const SCHEMA_VERSION = 1;
 export const DEFAULT_TINT = '#7AAA2C';
@@ -22,6 +25,14 @@ export const LIMITS = {
   qtyKg: 1000000,
   containers: 999,
 };
+
+/**
+ * Devises d'un prix propre à des pays, pour un emballage : l'euro, ou le franc CFA (Afrique de
+ * l'Ouest). Jamais de conversion : le prix saisi est celui que le client paie, dans cette devise.
+ */
+export const PACK_CURRENCIES = ['EUR', 'XOF'];
+/** Plafond d'un prix d'emballage par devise (le franc CFA s'écrit sans centimes, en milliers). */
+const PACK_PRICE_MAX = { EUR: 10000, XOF: 10000000, USD: 10000 };
 
 export const DEFAULT_RULES = {
   standard: { minKg: 500, stepKg: 100, maxKg: 100000 },
@@ -269,7 +280,8 @@ function offerToDoc(o) {
 }
 
 function retailToDoc(r) {
-  if (!r || typeof r !== 'object') return null;
+  // Emballé (vendu par ses emballages) ou désactivé pour les particuliers : aucun prix au kilo publié.
+  if (!r || typeof r !== 'object' || r.kind === 'emballe' || r.active === false) return null;
   const unit = r.unit === 'unit' ? 'unit' : 'kg';
   const out = {
     price: positive(r.price),
@@ -306,7 +318,11 @@ export function productToDoc(row) {
     rating: Number(row.rating) || 0,
     reviews: Number(row.reviews) || 0,
     retail: retailToDoc(row.retail),
-    wholesale: (Array.isArray(row.wholesale) ? row.wholesale : []).map(offerToDoc),
+    // Particuliers : 'emballe' = vendu uniquement par ses emballages ; 'frais' = au kilo ou à la pièce.
+    b2c: isPacked(row.retail) ? 'emballe' : 'frais',
+    wholesale: row.space === 'b2b' ? [] : (Array.isArray(row.wholesale) ? row.wholesale : []).map(offerToDoc),
+    // Espace Pros : la fiche pro (statut, offres par groupe de pays, logistique, médias…).
+    ...(row.space === 'b2b' ? { pro: proToDoc(row.pro) } : null),
   };
 }
 
@@ -495,6 +511,7 @@ export function packCountryRules(pack) {
       countries: codesOf(g?.countries),
       available: g?.available !== false,
       price: positive(g?.price),
+      currency: g?.currency === 'XOF' && positive(g?.price) !== null ? 'XOF' : 'EUR',
       photo_url: typeof g?.photo_url === 'string' && g.photo_url ? g.photo_url : null,
     }))
     .filter((g) => g.countries.length > 0);
@@ -510,7 +527,7 @@ export function packFor(pack, country) {
   const own = groupOf(packCountryRules(pack), country);
   if (!own) return rest;
   if (!own.available) return null;
-  return { ...rest, ...(own.price !== null ? { price: own.price } : null), ...(own.photo_url ? { photo_url: own.photo_url } : null) };
+  return { ...rest, ...(own.price !== null ? { price: own.price, currency: own.currency } : null), ...(own.photo_url ? { photo_url: own.photo_url } : null) };
 }
 
 // ───────────── Emballages d'un produit (carton, barquette, sachet…)
@@ -608,13 +625,20 @@ export function packContent(p) {
   return hasQty(p) ? packTotal(p, 1) : '';
 }
 
-/** Contenu de `count` emballages : « 8 kg », « 1,5 kg », « 12 pièces » — vide si la contenance manque. */
+/** Poids en grammes : ≥ 1 000 g → « 5 kg », « 1,5 kg », « 1,25 kg » (deux décimales au plus, zéros inutiles retirés) ; sinon « 500 g ». */
+function gramsText(grams) {
+  const g = Math.round(grams);
+  if (g < 1000) return `${g} g`;
+  const [whole, decimals] = String(Math.round(g / 10) / 100).split('.');
+  return `${group(whole)}${decimals ? `,${decimals}` : ''} kg`;
+}
+
+/** Contenu de `count` emballages : « 8 kg », « 1,5 kg », « 500 g », « 12 pièces » — vide si la contenance manque. */
 export function packTotal(p, count) {
   if (!hasQty(p) || !Number.isFinite(count)) return '';
   const total = Number(p.qty) * count;
   if (p.unit === 'piece') return `${num3(total)} ${total > 1 ? 'pièces' : 'pièce'}`;
-  if (p.unit === 'g') return total >= 1000 ? `${num3(total / 1000)} kg` : `${num3(total)} g`;
-  return `${num3(total)} kg`;
+  return gramsText(p.unit === 'g' ? total : total * 1000);
 }
 
 /** Prix ramené au contenu : « 3,25 € le kg », « 0,50 € la pièce » — vide si prix ou contenance manquent. */
@@ -694,7 +718,18 @@ export function validatePackagings(input) {
       else if (unit === 'piece' && !Number.isInteger(p.qty)) errors[`${at}.qty`] = 'Contenu en pièces : un nombre entier.';
       else qty = Math.round(p.qty * 1000) / 1000;
     }
-    const price = money(p.price, `${at}.price`, errors, 'Prix d’un emballage', LIMITS.retailPrice);
+    // Prix de l'emballage ENTIER dans chaque devise ; case vide = non vendu dans cette zone.
+    // (Ancien format : `price` seul = prix en euros.)
+    const rawPrices = p.prices && typeof p.prices === 'object' ? p.prices : { EUR: p.price };
+    const prices = {};
+    for (const cur of CURRENCIES) {
+      const v = money(rawPrices[cur], `${at}.prices.${cur}`, errors, `Prix en ${CURRENCY_SIGN[cur]}`, PACK_PRICE_MAX[cur]);
+      if (v !== null && cur === 'XOF' && !Number.isInteger(v)) errors[`${at}.prices.${cur}`] = 'Prix en F CFA : un nombre entier, sans centimes.';
+      prices[cur] = v;
+    }
+    if (p.available !== false && CURRENCIES.every((c) => prices[c] === null) && !CURRENCIES.some((c) => errors[`${at}.prices.${c}`])) {
+      errors[`${at}.prices`] = 'Indiquez au moins un prix (F CFA, € ou $) : sans prix, l’emballage n’est vendu nulle part.';
+    }
     // Photo de l'emballage : celle de tous les pays, sauf ceux qui ont la leur.
     const photoOf = (v, path) => {
       if (empty(v)) return null;
@@ -710,28 +745,12 @@ export function validatePackagings(input) {
     const description = String(p.description ?? '').trim().replace(/\s+/g, ' ');
     if (description.length > PACK_DESCRIPTION_MAX) errors[`${at}.description`] = `Description de l’emballage : ${PACK_DESCRIPTION_MAX} caractères au plus.`;
 
-    // Réglages par pays : proposé ou non ; au prix d'origine, ou à un prix propre à ces pays.
-    const ruleList = Array.isArray(p.countryRules) ? p.countryRules : [];
-    if (ruleList.length > COUNTRY_PRICE_LIMIT) errors[`${at}.countryRules`] = `${COUNTRY_PRICE_LIMIT} réglages par pays au plus.`;
-    const taken = new Set();
-    const countryRules = ruleList.slice(0, COUNTRY_PRICE_LIMIT).map((g, j) => {
-      const base = `${at}.countryRules.${j}`;
-      const countries = groupCountries(g?.countries, base, errors, taken, 'réglage');
-      const available = g?.available !== false;
-      // `own` : « prix propre » choisi à l'écran — le prix est alors obligatoire. Sinon : prix d'origine.
-      const own = available && (g?.own === true || (g?.own === undefined && !empty(g?.price)));
-      const own_price = own ? money(g?.price, `${base}.price`, errors, 'Prix de l’emballage dans ces pays', LIMITS.retailPrice) : null;
-      if (own && own_price === null && !errors[`${base}.price`]) {
-        errors[`${base}.price`] = 'Indiquez le prix de cet emballage dans ces pays, ou choisissez « Prix d’origine ».';
-      }
-      // Photo : la même que l'emballage d'origine, ou une photo propre à ces pays (alors obligatoire).
-      const ownPhoto = available && (g?.ownPhoto === true || (g?.ownPhoto === undefined && !empty(g?.photo_url)));
-      const own_photo = ownPhoto ? photoOf(g?.photo_url, `${base}.photo_url`) : null;
-      if (ownPhoto && own_photo === null && !errors[`${base}.photo_url`]) {
-        errors[`${base}.photo_url`] = 'Ajoutez la photo de l’emballage pour ces pays, ou choisissez « Même photo ».';
-      }
-      return { countries, available, price: own_price, photo_url: own_photo };
-    });
+    // Photo « produit dans l'emballage » : le grand aperçu de la fiche quand le client le choisit.
+    const preview_url = photoOf(p.preview_url, `${at}.preview_url`);
+    // Pays : toutes les zones où il a un prix, seulement ces pays, ou sauf ces pays.
+    const mode = ['zone', 'pays', 'sauf'].includes(p.countries?.mode) ? p.countries.mode : 'zone';
+    const list = mode === 'zone' ? [] : codesOf(p.countries?.list).slice(0, 80);
+    if (mode !== 'zone' && list.length === 0) errors[`${at}.countries`] = 'Choisissez au moins un pays, ou « Toutes les zones avec un prix ».';
 
     // Nombre d'emballages commandés : des emballages entiers.
     const count = (v, key, name) => {
@@ -768,18 +787,27 @@ export function validatePackagings(input) {
       label,
       qty,
       unit,
-      price,
+      // Compatibilité (offres pros, anciennes lectures) : le prix en euros.
+      price: prices.EUR,
       step,
       min,
       max,
       audience: PACK_AUDIENCES.includes(p.audience) ? p.audience : 'tous',
       available: p.available !== false,
       photo_url,
+      preview_url,
       description,
-      // La clé n'existe que s'il y a des réglages par pays.
-      ...(countryRules.length > 0 ? { countryRules } : null),
+      prices,
+      countries: { mode, list },
+      is_default: p.is_default === true,
     };
   });
+  // Un seul emballage « par défaut » : le premier coché.
+  let seenDefault = false;
+  for (const k of value) {
+    if (k.is_default && seenDefault) k.is_default = false;
+    if (k.is_default) seenDefault = true;
+  }
   return { errors, value };
 }
 
@@ -842,7 +870,25 @@ function quantity(v, path, errors, label, max, unit) {
   return v;
 }
 
+/**
+ * Offre particuliers. `kind` : 'frais' (vendu au kilo ou à la pièce) ou 'emballe' (vendu
+ * uniquement par ses emballages). `active: false` : « Pour les particuliers » désactivé — les
+ * valeurs restent enregistrées, rien n'est effacé. Emballé ou désactivé : le bloc est masqué à
+ * l'écran, ses valeurs sont gardées telles quelles, sans erreur.
+ */
 function validateRetail(input, errors) {
+  if (input === null || input === undefined) return null;
+  if (typeof input !== 'object') return validateRetailCore(input, errors);
+  const kind = input.kind === 'emballe' ? 'emballe' : 'frais';
+  const active = input.active !== false;
+  const out = validateRetailCore(input, kind === 'frais' && active ? errors : {});
+  return out ? { ...out, kind, active } : null;
+}
+
+/** Produit vendu aux particuliers uniquement par ses emballages. */
+export const isPacked = (retail) => retail?.kind === 'emballe';
+
+function validateRetailCore(input, errors) {
   if (input === null || input === undefined) return null;
   if (typeof input !== 'object') {
     errors['retail.price'] = 'Offre particuliers illisible.';
@@ -1204,8 +1250,20 @@ export function completeness(p, ctx = {}) {
   if (!Array.isArray(p.months) || p.months.length === 0) {
     out.push({ code: 'saison', label: 'Mois de disponibilité à renseigner' });
   }
-  const offers = Array.isArray(p.wholesale) ? p.wholesale : [];
-  if (!p.retail && offers.length === 0) {
+  // Espace Pros : la fiche pro seule compte (offres par groupe de pays).
+  if (p.space === 'b2b') {
+    const proOffers = (p.pro?.offers ?? []).filter((o) => o.active !== false);
+    if (proOffers.length === 0) out.push({ code: 'prix', label: 'Aucune offre : proposé à personne' });
+    proOffers.forEach((o) => {
+      if (!Object.values(o.groups ?? {}).some((g) => g?.offered)) out.push({ code: 'prix-pro', label: `${modeLabel(o.mode)} : proposé dans aucun groupe de pays` });
+    });
+    return out;
+  }
+  // Espace Particuliers : les anciennes offres pro ne sont plus publiées ici.
+  const offers = [];
+  if (p.retail?.kind === 'emballe') {
+    // Produit emballé : vendu par ses emballages, sans prix au kilo.
+  } else if (!p.retail && offers.length === 0) {
     out.push({ code: 'prix', label: 'Aucun prix ni offre : produit proposé à personne' });
   } else if (p.retail && positive(p.retail.price) === null) {
     out.push({ code: 'prix', label: 'Prix particulier à fixer' });

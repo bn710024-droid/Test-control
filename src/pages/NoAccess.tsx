@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { hourglassOutline, keyOutline, logOutOutline, refreshOutline, shieldCheckmarkOutline } from '../lib/glyphs';
+import { logOutOutline, refreshOutline, shieldCheckmarkOutline } from '../lib/glyphs';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { Backdrop, Wordmark } from '../components/Shell';
-import { Icon } from '../components/Icon';
 import { GhostButton, Notice, Page, PrimaryButton } from '../components/ui';
 import { messageOf } from '../lib/api';
 

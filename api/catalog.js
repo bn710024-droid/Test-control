@@ -1,14 +1,19 @@
 import supabase from './db-client.js';
-import { loadSeals, stateOf, AUDIENCE_KEY, proHiddenOf } from './_seal.js';
-import { buildDocument, DEFAULT_RULES, zoneOf, isCountryCode } from '../shared/catalog.js';
+import { stateOf, spaceOf, rowSpace, settingKey } from './_seal.js';
+import { loadCatalogSource } from './_catalog-data.js';
+import { buildDocument, DEFAULT_RULES, isCountryCode } from '../shared/catalog.js';
 import { requestMessageOf } from '../shared/requests.js';
 import { annonceState } from '../shared/orders.js';
+import { toAppDocument } from '../shared/catalog-v2.js';
+import { publishedPayments } from '../shared/payments.js';
+import { transportZonesOf } from '../shared/transport.js';
 
 /**
  * Catalogue publié — lecture publique, sans authentification.
  *
- * C'est l'adresse à renseigner dans `CATALOG_ENDPOINT` (lib/config.ts de l'application d'achat).
- * Le document suit `lib/catalog/schema.ts` (schema: 1). Il ne contient aucune donnée personnelle.
+ * `?v=2` : document AU FORMAT DE L'APPLICATION (schema: 2, voir shared/catalog-v2.js) — c'est
+ * l'adresse que lit l'application (`<tour>/api/catalog?v=2`). Sans `v` : document historique
+ * (schema: 1, clés de la tour), gardé pour compatibilité. Aucune donnée personnelle.
  * Seules les lignes validées par l'administration (scellé intact) y figurent.
  */
 export default async function handler(req, res) {
@@ -19,39 +24,22 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const [products, categories, settings, seals] = await Promise.all([
-      supabase.from('products').select('*').eq('archived', false).order('sort_order', { ascending: true }),
-      supabase.from('categories').select('*').order('sort_order', { ascending: true }),
-      supabase.from('settings').select('*').in('key', ['rules', AUDIENCE_KEY, 'filters', 'missing']),
-      loadSeals(),
-    ]);
-    const annonces = await supabase.from('publications').select('*').eq('kind', 'annonce').eq('published', true).order('sort_order', { ascending: true });
-    if (annonces.error) throw annonces.error;
-    const packRows = await supabase.from('packagings').select('*');
-    if (packRows.error) throw packRows.error;
-    const packagings = Object.fromEntries(
-      packRows.data.filter((r) => stateOf('packagings', r, seals) === 'ok').map((r) => [r.id, Array.isArray(r.items) ? r.items : []]),
-    );
-    // Pays où chaque produit s'affiche (table `zones`). Sans ligne : le monde entier.
-    const zoneRows = await supabase.from('zones').select('*');
-    if (zoneRows.error) throw zoneRows.error;
-    const zones = Object.fromEntries(zoneRows.data.filter((r) => stateOf('zones', r, seals) === 'ok').map((r) => [r.id, zoneOf(r.zone)]));
     // `?pays=SN` : le catalogue tel que le voit un client de ce pays.
     const asked = String(req.query?.pays ?? '').toUpperCase();
     if (asked && !isCountryCode(asked)) return res.status(400).json({ error: 'Pays inconnu : attendu, un code à deux lettres (SN, FR…).' });
-    if (products.error) throw products.error;
-    if (categories.error) throw categories.error;
-    if (settings.error) throw settings.error;
-
-    const okProducts = products.data.filter((p) => stateOf('products', p, seals) === 'ok');
-    const okCategories = categories.data.filter((c) => stateOf('categories', c, seals) === 'ok');
-    const rulesRow = settings.data.find((r) => r.key === 'rules') ?? null;
-    const audienceRow = settings.data.find((r) => r.key === AUDIENCE_KEY) ?? null;
-    const rulesOk = !!rulesRow && stateOf('settings', rulesRow, seals) === 'ok';
-    const filtersRow = settings.data.find((r) => r.key === 'filters') ?? null;
+    // `?espace=b2b` : catalogue des grossistes et importateurs ; sinon celui des particuliers.
+    // Un particulier ne voit jamais un produit pro, et l'inverse.
+    const space = spaceOf(req);
+    const [src, annonces] = await Promise.all([
+      loadCatalogSource(['filters', 'missing', 'gp', 'payments', 'transport'], space),
+      supabase.from('publications').select('*').eq('kind', 'annonce').eq('published', true).order('sort_order', { ascending: true }),
+    ]);
+    if (annonces.error) throw annonces.error;
+    annonces.data = annonces.data.filter((r) => rowSpace(r) === space);
+    const { seals, okProducts, okCategories, packagings, zones, rulesRow, rulesOk, audienceRow, proHidden } = src;
+    const settings = { data: src.settings };
+    const filtersRow = settings.data.find((r) => r.key === settingKey(space, 'filters')) ?? null;
     const filtersOk = !!filtersRow && stateOf('settings', filtersRow, seals) === 'ok';
-    // Rayons masqués aux grossistes et importateurs : leurs offres professionnelles ne sont pas publiées.
-    const proHidden = proHiddenOf(audienceRow, seals, categories.data.map((c) => c.id));
 
     const stamps = [
       ...okProducts.map((p) => p.updated_at),
@@ -76,6 +64,9 @@ export default async function handler(req, res) {
       updatedAt,
     });
     if (asked) doc.country = asked;
+    doc.space = space;
+    // Particuliers : aucune offre professionnelle publiée.
+    if (space === 'b2c') doc.products = doc.products.map((p) => ({ ...p, wholesale: [] }));
     // Filtres de l'accueil (« Tout », « De saison ») : nom et photo réglés par l'équipe. Clé
     // supplémentaire, que l'application actuelle ignore (ses filtres sont dans son code).
     if (filtersOk) {
@@ -107,6 +98,8 @@ export default async function handler(req, res) {
           key: r.id,
           id: link === 'none' ? null : r.data.product_id,
           accent: r.data.accent ?? '',
+          kicker: r.data.kicker ?? '',
+          title: r.data.title ?? '',
           body: r.data.body ?? '',
           startsAt: r.data.starts_at ?? null,
           endsAt: r.data.ends_at ?? null,
@@ -117,17 +110,35 @@ export default async function handler(req, res) {
       });
     // Produit introuvable : le message qui demande au client quel produit il recherche, et la
     // confirmation qu'il lit après l'envoi. `enabled: false` : l'application ne propose rien.
-    const missingRow = settings.data.find((r) => r.key === 'missing') ?? null;
+    const missingRow = settings.data.find((r) => r.key === settingKey(space, 'missing')) ?? null;
     doc.productRequest = requestMessageOf(missingRow && stateOf('settings', missingRow, seals) === 'ok' ? missingRow.value : null);
-    // Moyens de paiement des particuliers. Orange Money et Wave : surtout au Sénégal.
-    doc.payments = [
-      { id: 'orange_money', title: 'Orange Money', detail: 'Surtout au Sénégal', icon: 'phone-portrait-outline' },
-      { id: 'wave', title: 'Wave', detail: 'Surtout au Sénégal', icon: 'phone-portrait-outline' },
-      { id: 'virement', title: 'Virement bancaire', detail: 'Depuis l’étranger', icon: 'business-outline' },
-      { id: 'carte', title: 'Carte bancaire', detail: 'Partout', icon: 'card-outline' },
-    ];
+    // Moyens de paiement des particuliers, réglés dans Réglages › Moyens de paiement : seuls les
+    // moyens activés sont publiés (réglage absent ou non validé : les quatre).
+    const paymentsRow = space === 'b2c' ? (settings.data.find((r) => r.key === 'payments') ?? null) : null;
+    const paymentsOk = !!paymentsRow && stateOf('settings', paymentsRow, seals) === 'ok';
+    doc.payments = publishedPayments(paymentsOk ? paymentsRow.value : null);
+    // Forfait transport des particuliers par zone (Réglages › Transport), en euros. Publié seulement
+    // une fois réglé et validé : sans lui, l'application garde son barème.
+    const transportRow = space === 'b2c' ? (settings.data.find((r) => r.key === 'transport') ?? null) : null;
+    if (transportRow && stateOf('settings', transportRow, seals) === 'ok') {
+      // `currency` : la devise par défaut ; chaque zone dit la sienne (euro ou franc CFA).
+      // `currency: 'ZONES'` : un montant par devise de client (`fees`). Une application d'avant (qui
+      // exige 'EUR') ignore ces forfaits et garde son barème — jamais un montant lu dans la mauvaise devise.
+      doc.transport = { currency: 'ZONES', zones: transportZonesOf(transportRow.value) };
+    }
     // Cache court : une annonce activée, désactivée ou arrivée à son terme se voit en quelques secondes.
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');
+    if (String(req.query?.v ?? '') === '2') {
+      const demoIds = new Set(okProducts.filter((p) => p.is_example === true).map((p) => p.id));
+      // Livraison GP : pays desservis (Commandes › Livraison), avec la modalité réglée là-bas.
+      const gpRow = settings.data.find((r) => r.key === 'gp') ?? null;
+      const gpOk = !!gpRow && stateOf('settings', gpRow, seals) === 'ok';
+      const option = gpRow?.value?.delivery === 'domicile' ? 'domicile' : 'aéroport';
+      const gp = gpOk && Array.isArray(gpRow.value?.countries)
+        ? gpRow.value.countries.filter((c) => isCountryCode(c) && (!asked || c === asked)).map((country) => ({ country, options: [option] }))
+        : [];
+      return res.status(200).json(toAppDocument(doc, { demoIds, gp }));
+    }
     return res.status(200).json(doc);
   } catch (err) {
     console.error('API error:', err?.message || err);

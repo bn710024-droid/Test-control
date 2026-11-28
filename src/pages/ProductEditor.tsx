@@ -1,15 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { Reorder } from 'framer-motion';
 import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  airplaneOutline,
   archiveOutline,
   arrowBack,
   arrowUndoOutline,
-  boatOutline,
   cameraOutline,
   checkmarkCircle,
-  cubeOutline,
   ellipsisHorizontal,
   leafOutline,
   shieldCheckmarkOutline,
@@ -22,10 +20,10 @@ import { useData, type Product } from '../contexts/DataContext';
 import { useToast } from '../contexts/ToastContext';
 import { Icon } from '../components/Icon';
 import { CardPreview, CategoryRound, ProductArt, SeasonStrip } from '../components/catalog';
-import { OfferCard } from '../components/OfferCard';
+import { embeddedAssetsOf } from '../../shared/assets.js';
 import { NewCategorySheet } from '../components/NewCategorySheet';
 import { ZonePicker } from '../components/ZonePicker';
-import { AUDIENCE_TEXT, BenchContext, ProductPreview, Workbench, useBench } from '../components/Preview';
+import { BenchContext, ProductPreview, Workbench, useBench } from '../components/Preview';
 import {
   Chip,
   ConfirmSheet,
@@ -45,10 +43,12 @@ import {
   TextArea,
 } from '../components/ui';
 import { ApiError, messageOf } from '../lib/api';
-import { ago, euro, parseNum, plural, seasonText, unitTiny } from '../lib/format';
+import { ago, amount, euro, parseNum, plural, seasonText, unitTiny } from '../lib/format';
 import { prepareImage, type Prepared } from '../lib/image';
-import { newOffer, newPack, newPackCountry, newRetailGroup, packInput, toForm, toInput, type Form, type OfferForm, type PackForm } from '../lib/productForm';
-import { Choice, CountryPrices, RuleRow } from '../components/CountryPrices';
+import { newPack, newRetailGroup, packInput, toForm, toInput, type Form, type PackForm } from '../lib/productForm';
+import { Choice, CountryList, CountryPrices, RuleRow } from '../components/CountryPrices';
+import { CURRENCIES, CURRENCY_SIGN, ZONE_LABEL, priceAlerts } from '../../shared/zones.js';
+import { countryName } from '../../shared/catalog.js';
 import { PackPhoto } from '../components/PackPhoto';
 import { cx, glow } from '../lib/ui';
 import {
@@ -56,14 +56,11 @@ import {
   DEFAULT_RULES,
   PACK_DESCRIPTION_MAX,
   PACK_LIMIT,
-  globalScope,
   isKiloLabel,
   packContent,
   packRange,
   packRuleText,
   packTotal,
-  packPriceAlert,
-  packUnitPrice,
   pieceLabel,
   slugify,
   validatePackagings,
@@ -71,10 +68,11 @@ import {
   zoneLabel,
   validateProduct,
   type Errors,
-  type Mode,
   type Zone,
   type ProductInput,
 } from '../../shared/catalog.js';
+import { sp, useSpace } from '../lib/space';
+import ProEditor from './ProEditor';
 
 const BENCH_TITLE: Record<string, string> = {
   identite: 'Identité',
@@ -82,7 +80,6 @@ const BENCH_TITLE: Record<string, string> = {
   particuliers: 'Prix particuliers',
   emballages: 'Emballages',
   disponibilite: 'Disponibilité',
-  professionnels: 'Prix grossistes et importateurs',
   apercu: 'Aperçu client',
 };
 
@@ -155,6 +152,7 @@ export default function ProductEditor() {
   const { products, categories, loading, error, reload } = useData();
   const navigate = useNavigate();
   const product = id ? (products.find((p) => p.id === id) ?? null) : null;
+  const { space } = useSpace();
 
   if (error && products.length === 0) {
     return (
@@ -177,7 +175,7 @@ export default function ProductEditor() {
           title="Produit introuvable"
           body={`Aucune fiche ne porte l’identifiant « ${id} ». Elle a peut-être été supprimée.`}
           cta="Retour aux produits"
-          onPress={() => navigate('/produits')}
+          onPress={() => navigate(sp('/produits'))}
         />
       </Page>
     );
@@ -185,10 +183,12 @@ export default function ProductEditor() {
   if (categories.length === 0) {
     return (
       <Page className="pt-12">
-        <EmptyState title="Aucun rayon" body="Un produit se range dans un rayon. Créez d’abord un rayon." cta="Créer un rayon" onPress={() => navigate('/rayons')} />
+        <EmptyState title="Aucun rayon" body="Un produit se range dans un rayon. Créez d’abord un rayon." cta="Créer un rayon" onPress={() => navigate(sp('/rayons'))} />
       </Page>
     );
   }
+  // Espace Pros : sa propre fiche (statut, offres par groupe de pays, logistique, médias…).
+  if (space === 'b2b') return <ProEditor key={product?.id ?? 'nouveau'} product={product} />;
   return <Editor key={product?.id ?? 'nouveau'} product={product} />;
 }
 
@@ -225,8 +225,6 @@ function Editor({ product }: { product: Product | null }) {
   const [focusPack, setFocusPack] = useState<string | null>(null);
   // Un seul emballage ouvert à la fois dans la configuration ; les autres tiennent en une ligne.
   const [openPack, setOpenPack] = useState<string | null>(null);
-  // Offres ajoutées pendant cette visite : elles s'ouvrent d'elles-mêmes, les autres restent en une ligne.
-  const [freshOffers, setFreshOffers] = useState<string[]>([]);
   const benchValue = useMemo(() => ({ active: bench, el: benchEl, open: setBench }), [bench, benchEl]);
   const leaving = useRef(false);
 
@@ -314,7 +312,7 @@ function Editor({ product }: { product: Product | null }) {
     const gone = before.find((k) => k.key === key);
     setForm((f) => ({ ...f, packs: f.packs.filter((k) => k.key !== key) }));
     // Un retrait se rattrape : rien n'est perdu par un toucher de trop.
-    if (gone && (gone.label.trim() || gone.qty.trim() || gone.price.trim() || gone.photo)) {
+    if (gone && (gone.label.trim() || gone.qty.trim() || Object.values(gone.prices).some((v) => v.trim()) || gone.photo)) {
       toast(`Emballage « ${gone.label.trim() || 'sans nom'} » retiré`, { action: { label: 'Annuler', onPress: () => setForm((f) => ({ ...f, packs: before })) } });
     }
   };
@@ -323,19 +321,6 @@ function Editor({ product }: { product: Product | null }) {
     const id = form.id.trim();
     return uploadImage('packagings', /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) && id.length <= 40 ? id : 'emballage', blob);
   };
-  const removeOffer = (key: string) => {
-    const before = form.offers;
-    const gone = before.find((o) => o.key === key);
-    setForm((f) => ({ ...f, offers: f.offers.filter((o) => o.key !== key) }));
-    if (gone && (gone.exw.trim() || gone.fob.trim() || gone.countryPrices.length > 0)) {
-      toast(`Offre ${gone.mode ? `par ${gone.mode}` : 'standard'} retirée`, { action: { label: 'Annuler', onPress: () => setForm((f) => ({ ...f, offers: before })) } });
-    }
-  };
-  const setOffer = (key: string, patch: Partial<OfferForm>) => {
-    setForm((f) => ({ ...f, offers: f.offers.map((o) => (o.key === key ? { ...o, ...patch } : o)) }));
-    setServerErrors((e) => (Object.keys(e).length ? {} : e));
-  };
-
   const pickPhoto = async (file: File | undefined) => {
     if (!file) return;
     setPhotoBusy(true);
@@ -380,7 +365,7 @@ function Editor({ product }: { product: Product | null }) {
       toast(isNew ? `Fiche « ${row.name} » créée${row.available ? '' : ' (masquée pour l’instant)'}` : `Fiche « ${row.name} » enregistrée`);
       if (isNew) {
         leaving.current = true;
-        navigate(`/produits/${row.id}`, { replace: true });
+        navigate(sp(`/produits/${row.id}`), { replace: true });
       }
       return true;
     } catch (e) {
@@ -414,7 +399,7 @@ function Editor({ product }: { product: Product | null }) {
       await deleteProduct(product.id);
       toast(`Fiche « ${product.name} » supprimée définitivement`);
       leaving.current = true;
-      navigate('/produits', { replace: true });
+      navigate(sp('/produits'), { replace: true });
     } catch (e) {
       toast(messageOf(e), { tone: 'error' });
       setWorking(false);
@@ -422,7 +407,7 @@ function Editor({ product }: { product: Product | null }) {
   };
 
   // ───── Affichage
-  const embedded = settings?.compat?.embeddedAssets ?? [];
+  const embedded = embeddedAssetsOf(settings?.compat);
   const hasEmbedded = !!form.photo_asset && embedded.includes(form.photo_asset);
   const shownSrc = pending ? pending.previewUrl : photoOf(form, 'full');
   const shownRatio = pending ? pending.ratio : form.photo_ratio;
@@ -445,31 +430,8 @@ function Editor({ product }: { product: Product | null }) {
     return [...seen.entries()].slice(0, 10);
   }, [products]);
 
-  // Commercialisé pour les professionnels : au moins une offre ouverte. Allumer sans aucune offre
-  // en crée une « standard », sans prix inventé (elle s'affichera « Prix à confirmer »).
-  // Le rayon du produit peut être masqué aux grossistes et importateurs (réglé dans Rayons).
-  const proAllowed = categories.find((c) => c.id === form.category)?.pro_visible !== false;
-  const proOn = proAllowed && form.offers.some((o) => o.available);
-  const setPro = (on: boolean) => {
-    const first = newOffer(null);
-    if (on && form.offers.length === 0) setFreshOffers((k) => [...k, first.key]);
-    setForm((f) => ({
-      ...f,
-      offers: on ? (f.offers.length === 0 ? [first] : f.offers.map((o) => ({ ...o, available: true }))) : f.offers.map((o) => ({ ...o, available: false })),
-    }));
-    setServerErrors((e) => (Object.keys(e).length ? {} : e));
-  };
-
-  const freeModes = (['avion', 'bateau', null] as (Mode | null)[]).filter((m) => !form.offers.some((o) => o.mode === m));
   const priceNumber = check.value.retail?.price ?? null;
   const zone: Zone = { mode: form.zoneMode, except: form.zoneExcept };
-  // Les deux publics ont chacun leurs prix : un prix professionnel identique au prix particulier est signalé.
-  const samePrice =
-    form.sold && form.unit === 'kg' && priceNumber !== null
-      ? form.offers.flatMap((o) =>
-          o.priceUnit !== 'kg' ? [] : ([['EXW', o.exw], ['FOB', o.fob]] as const).filter(([, v]) => parseNum(v) === priceNumber).map(([term]) => `prix ${term} ${o.mode ? `par ${o.mode}` : 'standard'}`),
-        )
-      : [];
   const canSave = dirty || isNew || !!sealIssue;
   const saveLabel = isNew ? 'Créer le produit' : sealIssue && !dirty ? 'Valider cette fiche' : 'Enregistrer';
 
@@ -506,23 +468,24 @@ function Editor({ product }: { product: Product | null }) {
           noun: (form.unit === 'kg' ? ['kg', 'kg'] : [form.nounOne.trim() || 'pièce', form.nounMany.trim() || 'pièces']) as [string, string],
         }
       : null,
-    packs: form.packs.map((k) => ({ ...packInput(k), id: k.key, qty: shown(parseNum(k.qty)), price: shown(parseNum(k.price)), ...packRange({ step: parseNum(k.step), min: parseNum(k.min), max: parseNum(k.max) }) })),
+    kind: form.kind,
+    packs: form.packs.map((k) => ({ ...packInput(k), id: k.key, qty: shown(parseNum(k.qty)), price: shown(parseNum(k.prices.EUR)), ...packRange({ step: parseNum(k.step), min: parseNum(k.min), max: parseNum(k.max) }) })),
     zone: { mode: form.zoneMode, except: form.zoneExcept },
   };
   // La règle : le prix au kilo ou à la pièce est le prix global ; un emballage a son propre prix,
   // pour l'emballage entier. Chaque emballage est comparé au prix global, où qu'on soit dans la fiche.
-  const packAlerts = form.packs.map((k) =>
-    packPriceAlert({ ...packInput(k), qty: shown(parseNum(k.qty)), price: shown(parseNum(k.price)) }, form.sold ? { price: priceNumber, unit: form.unit } : null),
-  );
+  // Alerte (non bloquante) : un prix qui semble saisi dans la mauvaise devise.
+  const packAlerts = form.packs.map((k) => priceAlerts(packInput(k).prices)[0] ?? '');
   const alertNames = form.packs.filter((_, i) => packAlerts[i]).map((k) => `« ${k.label.trim() || 'Emballage sans nom'} »`);
 
   /** Un emballage en une ligne : sa photo, son nom, son contenu et son prix, sa règle — « Modifier » ouvre sa configuration. */
   const packRow = (k: PackForm, i: number) => {
-    const v = { ...packInput(k), qty: shown(parseNum(k.qty)), price: shown(parseNum(k.price)) };
+    const v = { ...packInput(k), qty: shown(parseNum(k.qty)), price: shown(parseNum(k.prices.EUR)) };
     const bad = Object.keys(errors).some((path) => path.startsWith(`packagings.${i}.`));
     const content = packContent(v);
-    const apart = new Set(k.countries.flatMap((g) => g.countries)).size;
     const name = k.label.trim() || 'Emballage sans nom';
+    const pricesText = CURRENCIES.map((c) => (v.prices?.[c] ? amount(v.prices[c] as number, c) : '—')).join(' · ');
+    const where = k.countries.mode === 'zone' ? 'Toutes les zones avec un prix' : `${k.countries.mode === 'pays' ? 'Seulement' : 'Sauf'} : ${k.countries.list.map(countryName).join(', ') || 'à choisir'}`;
     return (
       <RuleRow
         key={k.key}
@@ -530,7 +493,18 @@ function Editor({ product }: { product: Product | null }) {
         title={name}
         muted={!k.label.trim()}
         thumb={k.photo || null}
-        summary={[content ? `Contient ${content}` : 'Contenu à préciser', v.price !== null ? euro(v.price) : 'Prix à confirmer', bad ? '' : packRuleText(v), AUDIENCE_TEXT[k.audience], apart > 0 ? plural(apart, 'pays à part', 'pays à part') : ''].filter(Boolean).join(' · ')}
+        summary={[content || 'Contenu à préciser', pricesText, where, bad ? '' : packRuleText(v)].filter(Boolean).join(' · ')}
+        extra={
+          <button
+            type="button"
+            onClick={() => setForm((f) => ({ ...f, packs: f.packs.map((x) => ({ ...x, isDefault: x.key === k.key ? !k.isDefault : false })) }))}
+            aria-pressed={k.isDefault}
+            aria-label={k.isDefault ? `${name} : emballage par défaut` : `Choisir ${name} comme emballage par défaut`}
+            className={cx('press flex min-h-11 items-center rounded-full px-2.5 text-[13.5px] font-bold', k.isDefault ? 'text-star' : 'text-fg-faint')}
+          >
+            {k.isDefault ? '★ Par défaut' : '☆'}
+          </button>
+        }
         chips={
           !k.available || bad || packAlerts[i] || !k.photo ? (
             <>
@@ -556,13 +530,15 @@ function Editor({ product }: { product: Product | null }) {
   return (
     <BenchContext.Provider value={benchValue}>
     <Page>
+      {/* Modifications non enregistrées : la mise à jour automatique attend (components/Update.tsx). */}
+      <span hidden data-dirty={dirty ? 'true' : undefined} />
       {/* Barre du haut : en tête de page seulement. Elle ne suit pas le défilement, pour laisser toute la place à la fiche. */}
       <div
         data-barre="haut"
         className="relative z-20 flex items-center justify-between gap-3 px-[18px] pb-2"
         style={{ paddingTop: 'calc(max(env(safe-area-inset-top), 10px) + 6px)' }}
       >
-        <RoundButton icon={arrowBack} label="Retour" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/produits'))} />
+        <RoundButton icon={arrowBack} label="Retour" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate(sp('/produits')))} />
         <h1 className="min-w-0 flex-1 truncate text-center font-display text-[18px] font-semibold">
           {isNew ? form.name || 'Nouveau produit' : form.name || product.name}
         </h1>
@@ -635,6 +611,27 @@ function Editor({ product }: { product: Product | null }) {
         <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-x-1">
         <div className="min-w-0">
         {/* ───── Commercialisation : trois interrupteurs, à la création comme ensuite. */}
+        {/* ───── Particuliers : produit emballé (vendu par ses emballages) ou frais (au kilo, à la pièce) */}
+        <Section id="b2c" title="Particuliers" aside={<Chip tone="leaf">{form.kind === 'emballe' ? 'Emballé' : 'Frais'}</Chip>}>
+          <div className="mt-3">
+            <Choice
+              label="Type de produit pour les particuliers"
+              value={form.kind}
+              onChange={(kind) => {
+                set('kind', kind);
+                if (kind === 'emballe') setBench('emballages');
+              }}
+              options={[
+                ['emballe', 'Emballé'],
+                ['frais', 'Frais'],
+              ]}
+            />
+          </div>
+          <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint">
+            {form.kind === 'emballe' ? 'Vendu uniquement par ses emballages, à leur prix.' : 'Vendu au kilo ou à la pièce, au prix particulier.'}
+          </p>
+        </Section>
+
         <Section id="commercialisation" title="Commercialisation" aside={<Chip tone={form.available ? 'leaf' : 'neutral'}>{form.available ? 'Commercialisé' : 'Non commercialisé'}</Chip>}>
           <div>
             <ToggleRow
@@ -643,7 +640,7 @@ function Editor({ product }: { product: Product | null }) {
               checked={form.available}
               onChange={(v) => set('available', v)}
             />
-            <ToggleRow
+            {form.kind === 'frais' && <ToggleRow
               title="Pour les particuliers"
               detail={
                 !form.sold
@@ -658,31 +655,13 @@ function Editor({ product }: { product: Product | null }) {
                 // Allumer ce public ouvre la fenêtre de ses prix : ils lui sont propres.
                 if (v) setBench('particuliers');
               }}
-            />
-            <ToggleRow
-              title="Pour les grossistes et importateurs"
-              disabled={!proAllowed}
-              detail={
-                !proAllowed
-                  ? `Impossible : le rayon « ${categories.find((c) => c.id === form.category)?.label ?? form.category} » est masqué aux grossistes et importateurs. Ils ne voient pas ce produit.`
-                  : proOn
-                  ? 'Ils voient ce produit et peuvent envoyer leur demande de commande. Leurs prix, distincts de ceux des particuliers : section « Prix grossistes et importateurs ».'
-                  : form.offers.length > 0
-                    ? 'Éteint : ils ne voient pas ce produit. Les offres et leurs prix sont conservés.'
-                    : 'Éteint : ils ne voient pas ce produit.'
-              }
-              checked={proOn}
-              onChange={(v) => {
-                setPro(v);
-                if (v) setBench('professionnels');
-              }}
-            />
+            />}
           </div>
           {form.available && form.months.length === 0 && (
             <p className="mt-3 px-1 text-[12.5px] leading-[18px] text-star">Pour commercialiser ce produit, indiquez aussi ses mois de disponibilité, plus bas.</p>
           )}
-          {form.available && !form.sold && !proOn && (
-            <p className="mt-3 px-1 text-[12.5px] leading-[18px] text-star">Commercialisé, mais pour personne : allumez « particuliers », « grossistes et importateurs », ou les deux.</p>
+          {form.available && form.kind === 'frais' && !form.sold && (
+            <p className="mt-3 px-1 text-[12.5px] leading-[18px] text-star">Commercialisé, mais pas pour les particuliers : allumez « Pour les particuliers ».</p>
           )}
         </Section>
 
@@ -780,6 +759,244 @@ function Editor({ product }: { product: Product | null }) {
           <ToggleRow title="Produit bio" detail="Affiche la mention « Bio » sur la fiche." checked={form.bio} onChange={(v) => set('bio', v)} />
         </Section>
 
+        {/* ───── Emballages */}
+        <Section id="emballages" expand title="Emballages" aside={<Chip>{plural(form.packs.length, 'emballage', 'emballages')}</Chip>}>
+          {bench !== 'emballages' ? (
+            <>
+              <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">Box, carton, sachet… Chaque emballage a un contenu fixe et un prix pour l’emballage entier, dans chaque devise où il est vendu (F CFA, €, $). Le premier de la liste, ou celui marqué ★, s’ouvre par défaut.</p>
+              {form.packs.length > 0 && (
+                // Glisser une ligne pour réordonner : le premier emballage proposé sert de défaut.
+                <Reorder.Group axis="y" values={form.packs} onReorder={(packs) => setForm((f) => ({ ...f, packs }))} className="mt-3 flex flex-col gap-2" as="div">
+                  {form.packs.map((k, i) => (
+                    <Reorder.Item key={k.key} value={k} as="div" className="cursor-grab active:cursor-grabbing">
+                      {packRow(k, i)}
+                    </Reorder.Item>
+                  ))}
+                </Reorder.Group>
+              )}
+              <GhostButton
+                className="mt-3 w-full"
+                tone="leaf"
+                label={form.packs.length > 0 ? 'Configurer les emballages' : 'Ajouter un emballage'}
+                onClick={() => {
+                  if (form.packs.length === 0) addPack();
+                  setBench('emballages');
+                }}
+              />
+            </>
+          ) : (
+            <>
+              <p className="mt-2 rounded-2xl border border-leaf/30 bg-leaf-wash px-3.5 py-2.5 text-[13px] leading-[19px]" data-regle="prix">
+                <span className="font-extrabold text-leaf">Règle.</span> Le prix au kilo ou à la pièce est le prix global du produit : il se règle dans « Prix particuliers ». Un emballage, lui, a un contenu fixe et un prix fixe pour l’emballage entier.
+              </p>
+              {form.packs.map((k, i) => {
+                // Replié : une ligne. Ouvert — ou à corriger : sa configuration complète.
+                if (openPack !== k.key && !shownUnder(`packagings.${i}.`)) {
+                  return (
+                    <div key={k.key} className="mt-2">
+                      {packRow(k, i)}
+                    </div>
+                  );
+                }
+                const v = { ...packInput(k), qty: shown(parseNum(k.qty)), price: shown(parseNum(k.prices.EUR)) };
+                const range = packRange(v);
+                const ruleBad = ['step', 'min', 'max'].some((f) => errors[`packagings.${i}.${f}`]);
+                const priceAlert = packAlerts[i];
+                const low = packTotal(v, range.min);
+                const high = range.max !== null ? packTotal(v, range.max) : '';
+                const head = 'mb-0 mt-5 text-[12.5px] font-extrabold uppercase tracking-[0.08em] text-fg-faint';
+                return (
+                  <div
+                    key={k.key}
+                    id={`emballage-${k.key}`}
+                    className="mt-2 rounded-[22px] border border-leaf/50 bg-black/20 p-3.5"
+                    onFocusCapture={() => setFocusPack(k.key)}
+                    data-ouvert="true"
+                  >
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="shrink-0 whitespace-nowrap text-[12.5px] font-extrabold uppercase tracking-[0.08em] text-fg-faint">Emballage {i + 1}</p>
+                      <span className="ml-auto flex shrink-0 items-center gap-2">
+                        <GhostButton compact tone="danger" label="Retirer" onClick={() => removePack(k.key)} aria-label={`Retirer l’emballage ${i + 1}`} />
+                        <GhostButton compact label="Terminé" onClick={() => setOpenPack(null)} aria-label={`Replier l’emballage ${i + 1}`} />
+                      </span>
+                    </div>
+                    <Field
+                      label="Nom de l’emballage"
+                      value={k.label}
+                      maxLength={40}
+                      placeholder="Box de 4 kg"
+                      onValue={(val) => setPack(k.key, { label: val })}
+                      onBlur={() => touch(`packagings.${i}.label`)}
+                      error={err(`packagings.${i}.label`)}
+                    />
+                    <PackPhoto
+                      label="Emballage seul"
+                      value={k.photo}
+                      onChange={(photo) => setPack(k.key, { photo })}
+                      upload={uploadPackPhoto}
+                      error={err(`packagings.${i}.photo_url`)}
+                      hint="La photo de l’emballage, montrée dans la liste des emballages."
+                    />
+                    <PackPhoto
+                      label="Produit dans l’emballage"
+                      value={k.preview}
+                      onChange={(preview) => setPack(k.key, { preview })}
+                      upload={uploadPackPhoto}
+                      error={err(`packagings.${i}.preview_url`)}
+                      hint="Le grand aperçu de la fiche quand le client choisit cet emballage."
+                    />
+                    <TextArea
+                      label="Description de l’emballage"
+                      optional
+                      value={k.description}
+                      maxLength={PACK_DESCRIPTION_MAX}
+                      className="!min-h-[112px]"
+                      placeholder="Pot en verre refermable de 200 g : la poudre reste à l’abri de l’humidité, prête à doser à la cuillère."
+                      onValue={(val) => setPack(k.key, { description: val })}
+                      onBlur={() => touch(`packagings.${i}.description`)}
+                      error={err(`packagings.${i}.description`)}
+                      hint={`${k.description.trim().length} / ${PACK_DESCRIPTION_MAX} · affichée sur la fiche du produit, au-dessus de sa description, quand le client choisit cet emballage.`}
+                    />
+
+                    {/* 1. Ce qu'il y a dans UN emballage */}
+                    <p className={head}>Contenu d’un emballage</p>
+                    <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
+                      <Field
+                        label="Quantité contenue"
+                        inputMode="decimal"
+                        placeholder="4"
+                        suffix={k.unit === 'piece' ? 'pièces' : k.unit}
+                        className="pr-[74px]"
+                        value={k.qty}
+                        onValue={(val) => setPack(k.key, { qty: val })}
+                        onBlur={() => touch(`packagings.${i}.qty`)}
+                        error={err(`packagings.${i}.qty`)}
+                      />
+                      <div>
+                        <p className="mb-[7px] mt-4 text-[13px] font-semibold text-fg-dim">Unité du contenu</p>
+                        <Segmented
+                          label={`Unité du contenu de l’emballage ${i + 1}`}
+                          full
+                          value={k.unit}
+                          onChange={(u) => setPack(k.key, { unit: u })}
+                          options={[
+                            { value: 'kg', label: 'kg' },
+                            { value: 'g', label: 'g' },
+                            { value: 'piece', label: 'pièces' },
+                          ]}
+                        />
+                      </div>
+                    </div>
+                    <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint">Obligatoire. Ce qu’il y a dans un seul emballage : 4 kg de fruits, 500 g, 6 pièces…</p>
+
+                    {/* 2. Son prix */}
+                    <p className={head}>Prix</p>
+                    <p className="mt-1 px-1 text-[12.5px] leading-[18px] text-fg-faint">Le prix de l’emballage entier, dans chaque zone. Case vide : non vendu dans cette zone.</p>
+                    <div className="grid grid-cols-1 gap-x-2.5 sm:grid-cols-3">
+                      {CURRENCIES.map((c) => (
+                        <Field
+                          key={c}
+                          label={`${ZONE_LABEL[c]} — ${CURRENCY_SIGN[c]}`}
+                          compact
+                          inputMode={c === 'XOF' ? 'numeric' : 'decimal'}
+                          placeholder="—"
+                          suffix={CURRENCY_SIGN[c]}
+                          value={k.prices[c]}
+                          onValue={(val) => setPack(k.key, { prices: { ...k.prices, [c]: val } })}
+                          onBlur={() => touch(`packagings.${i}.prices.${c}`)}
+                          error={err(`packagings.${i}.prices.${c}`)}
+                          className="pr-[64px]"
+                        />
+                      ))}
+                    </div>
+                    <GroupError message={attempted ? errors[`packagings.${i}.prices`] : undefined} />
+                    {priceAlert && (
+                      <p role="status" className="mt-2.5 rounded-2xl border border-star/40 bg-star/10 px-3.5 py-2.5 text-[13px] font-semibold leading-[19px] text-star" data-alerte="devise">
+                        À vérifier : {priceAlert}
+                      </p>
+                    )}
+
+                    {/* 3. Combien d'emballages le client commande */}
+                    <p className={head}>Nombre d’emballages par commande</p>
+                    <div className="grid grid-cols-3 gap-2.5">
+                      <Field label="Palier" inputMode="numeric" compact placeholder="1" value={k.step} onValue={(val) => setPack(k.key, { step: val })} onBlur={() => touch(`packagings.${i}.step`)} error={err(`packagings.${i}.step`)} />
+                      <Field label="Minimum" inputMode="numeric" compact placeholder="Vide" value={k.min} onValue={(val) => setPack(k.key, { min: val })} onBlur={() => touch(`packagings.${i}.min`)} error={err(`packagings.${i}.min`)} />
+                      <Field label="Maximum" inputMode="numeric" compact placeholder="Aucun" value={k.max} onValue={(val) => setPack(k.key, { max: val })} onBlur={() => touch(`packagings.${i}.max`)} error={err(`packagings.${i}.max`)} />
+                    </div>
+                    {!ruleBad && (
+                      <p className="mt-3 rounded-2xl bg-black/20 px-3.5 py-2.5 text-[13px] font-semibold leading-[19px]" data-regle="emballage">
+                        {packRuleText(v)}
+                        {low && <span className="font-medium text-fg-dim"> — soit {high ? `de ${low} à ${high}` : `${low} au minimum`}.</span>}
+                      </p>
+                    )}
+                    <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint">
+                      Comptés en emballages entiers, jamais en kilos. Le palier est le nombre ajouté à chaque appui sur « + ». Minimum vide : un palier. Maximum vide : aucun maximum.
+                    </p>
+
+                    <p className="mb-[7px] mt-5 text-[13px] font-semibold text-fg-dim">Proposé à</p>
+                    <Segmented
+                      label={`Public de l’emballage ${i + 1}`}
+                      full
+                      value={k.audience}
+                      onChange={(a) => setPack(k.key, { audience: a })}
+                      options={[
+                        { value: 'tous', label: 'Tous' },
+                        { value: 'particuliers', label: 'Particuliers' },
+                        { value: 'pros', label: 'Pros' },
+                      ]}
+                    />
+                    <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint">
+                      {k.audience === 'pros'
+                        ? 'Les professionnels commandent par offres (avion, bateau) : l’application ne leur montre pas d’emballage. Réservé aux pros, cet emballage n’est donc proposé à personne pour l’instant.'
+                        : 'Dans l’application, les emballages sont proposés aux particuliers ; les professionnels commandent par offres (avion, bateau).'}
+                    </p>
+                    <ToggleRow
+                      title={`Emballage ${i + 1} proposé`}
+                      detail={k.available ? 'Visible sur la fiche du produit.' : 'Masqué : conservé ici, invisible pour les clients.'}
+                      checked={k.available}
+                      onChange={(val) => setPack(k.key, { available: val })}
+                    />
+
+                    {/* 4. Où cet emballage est vendu : seulement là où il a un prix */}
+                    <p className="mb-[7px] mt-5 text-[13px] font-semibold text-fg-dim">Pays</p>
+                    <Segmented
+                      label={`Pays de l’emballage ${i + 1}`}
+                      full
+                      value={k.countries.mode}
+                      onChange={(mode) => setPack(k.key, { countries: { ...k.countries, mode } })}
+                      options={[
+                        { value: 'zone', label: 'Toutes les zones avec un prix' },
+                        { value: 'pays', label: 'Seulement ces pays' },
+                        { value: 'sauf', label: 'Sauf ces pays' },
+                      ]}
+                    />
+                    {k.countries.mode !== 'zone' && (
+                      <div className="mt-2.5">
+                        <CountryList
+                          noun="emballage"
+                          countries={k.countries.list}
+                          taken={new Set()}
+                          label={`Pays de l’emballage ${i + 1}`}
+                          onChange={(list) => setPack(k.key, { countries: { ...k.countries, list } })}
+                        />
+                      </div>
+                    )}
+                    <GroupError message={err(`packagings.${i}.countries`)} />
+                    <ToggleRow
+                      title="Emballage par défaut"
+                      detail={k.isDefault ? 'Sélectionné à l’ouverture de la fiche.' : 'Sinon, le premier emballage proposé au client.'}
+                      checked={k.isDefault}
+                      onChange={(val) => setForm((f) => ({ ...f, packs: f.packs.map((x) => ({ ...x, isDefault: x.key === k.key ? val : false })) }))}
+                    />
+                  </div>
+                );
+              })}
+              <GroupError message={attempted ? errors.packagings : undefined} />
+              <GhostButton className="mt-3 w-full" tone="leaf" label="Ajouter un emballage" disabled={form.packs.length >= PACK_LIMIT} onClick={addPack} />
+            </>
+          )}
+        </Section>
+
         {/* ───── Photo et teinte */}
         <Section id="photo" expand title="Photo et teinte">
           <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
@@ -857,6 +1074,7 @@ function Editor({ product }: { product: Product | null }) {
           </div>
           <div className="min-w-0">
         {/* ───── Particuliers */}
+        {form.kind === 'frais' && (
         <Section id="particuliers" expand title="Prix particuliers" aside={<Chip tone={form.sold && priceNumber !== null ? 'leaf' : 'neutral'}>{!form.sold ? 'Non proposé' : priceNumber === null ? 'Prix à fixer' : form.countryPrices.length > 0 ? `${euro(priceNumber)} · ${plural(new Set(form.countryPrices.flatMap((g) => g.countries)).size, 'pays à part', 'pays à part')}` : euro(priceNumber)}</Chip>}>
           {/* Le choix « par kilo » ou « par pièce » : toujours visible, à la création comme ensuite. */}
           <p className="mb-[7px] mt-3.5 text-[13px] font-semibold text-fg-dim">Ce produit se vend</p>
@@ -990,282 +1208,7 @@ function Editor({ product }: { product: Product | null }) {
             </>
           )}
         </Section>
-
-        {/* ───── Emballages */}
-        <Section id="emballages" expand title="Emballages" aside={<Chip>{plural(form.packs.length, 'emballage', 'emballages')}</Chip>}>
-          {bench !== 'emballages' ? (
-            <>
-              <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">Box, carton, sachet… Chaque emballage a un contenu fixe et un prix fixe pour l’emballage entier. Le prix au kilo ou à la pièce reste le prix global, dans « Prix particuliers ».</p>
-              {form.packs.length > 0 && <div className="mt-3 flex flex-col gap-2">{form.packs.map((k, i) => packRow(k, i))}</div>}
-              <GhostButton
-                className="mt-3 w-full"
-                tone="leaf"
-                label={form.packs.length > 0 ? 'Configurer les emballages' : 'Ajouter un emballage'}
-                onClick={() => {
-                  if (form.packs.length === 0) addPack();
-                  setBench('emballages');
-                }}
-              />
-            </>
-          ) : (
-            <>
-              <p className="mt-2 rounded-2xl border border-leaf/30 bg-leaf-wash px-3.5 py-2.5 text-[13px] leading-[19px]" data-regle="prix">
-                <span className="font-extrabold text-leaf">Règle.</span> Le prix au kilo ou à la pièce est le prix global du produit : il se règle dans « Prix particuliers ». Un emballage, lui, a un contenu fixe et un prix fixe pour l’emballage entier.
-              </p>
-              {form.packs.map((k, i) => {
-                // Replié : une ligne. Ouvert — ou à corriger : sa configuration complète.
-                if (openPack !== k.key && !shownUnder(`packagings.${i}.`)) {
-                  return (
-                    <div key={k.key} className="mt-2">
-                      {packRow(k, i)}
-                    </div>
-                  );
-                }
-                const v = { ...packInput(k), qty: shown(parseNum(k.qty)), price: shown(parseNum(k.price)) };
-                const range = packRange(v);
-                const ruleBad = ['step', 'min', 'max'].some((f) => errors[`packagings.${i}.${f}`]);
-                const perUnit = packUnitPrice(v);
-                const priceAlert = packPriceAlert(v, form.sold ? { price: priceNumber, unit: form.unit } : null);
-                const globalRef = form.sold && priceNumber !== null ? ` Prix global du produit : ${euro(priceNumber)} ${form.unit === 'kg' ? 'le kg' : form.unitLabel}.` : '';
-                const low = packTotal(v, range.min);
-                const high = range.max !== null ? packTotal(v, range.max) : '';
-                const head = 'mb-0 mt-5 text-[12.5px] font-extrabold uppercase tracking-[0.08em] text-fg-faint';
-                return (
-                  <div
-                    key={k.key}
-                    id={`emballage-${k.key}`}
-                    className="mt-2 rounded-[22px] border border-leaf/50 bg-black/20 p-3.5"
-                    onFocusCapture={() => setFocusPack(k.key)}
-                    data-ouvert="true"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="shrink-0 whitespace-nowrap text-[12.5px] font-extrabold uppercase tracking-[0.08em] text-fg-faint">Emballage {i + 1}</p>
-                      <span className="ml-auto flex shrink-0 items-center gap-2">
-                        <GhostButton compact tone="danger" label="Retirer" onClick={() => removePack(k.key)} aria-label={`Retirer l’emballage ${i + 1}`} />
-                        <GhostButton compact label="Terminé" onClick={() => setOpenPack(null)} aria-label={`Replier l’emballage ${i + 1}`} />
-                      </span>
-                    </div>
-                    <Field
-                      label="Nom de l’emballage"
-                      value={k.label}
-                      maxLength={40}
-                      placeholder="Box de 4 kg"
-                      onValue={(val) => setPack(k.key, { label: val })}
-                      onBlur={() => touch(`packagings.${i}.label`)}
-                      error={err(`packagings.${i}.label`)}
-                    />
-                    <PackPhoto
-                      label="Photo de l’emballage"
-                      value={k.photo}
-                      onChange={(photo) => setPack(k.key, { photo })}
-                      upload={uploadPackPhoto}
-                      error={err(`packagings.${i}.photo_url`)}
-                      hint="Celle de tous les pays, sauf ceux à qui vous donnez leur propre photo, plus bas."
-                    />
-                    <TextArea
-                      label="Description de l’emballage"
-                      optional
-                      value={k.description}
-                      maxLength={PACK_DESCRIPTION_MAX}
-                      className="!min-h-[112px]"
-                      placeholder="Pot en verre refermable de 200 g : la poudre reste à l’abri de l’humidité, prête à doser à la cuillère."
-                      onValue={(val) => setPack(k.key, { description: val })}
-                      onBlur={() => touch(`packagings.${i}.description`)}
-                      error={err(`packagings.${i}.description`)}
-                      hint={`${k.description.trim().length} / ${PACK_DESCRIPTION_MAX} · affichée sur la fiche du produit, au-dessus de sa description, quand le client choisit cet emballage.`}
-                    />
-
-                    {/* 1. Ce qu'il y a dans UN emballage */}
-                    <p className={head}>Contenu d’un emballage</p>
-                    <div className="grid grid-cols-1 gap-x-3 sm:grid-cols-2">
-                      <Field
-                        label="Quantité contenue"
-                        inputMode="decimal"
-                        placeholder="4"
-                        suffix={k.unit === 'piece' ? 'pièces' : k.unit}
-                        className="pr-[74px]"
-                        value={k.qty}
-                        onValue={(val) => setPack(k.key, { qty: val })}
-                        onBlur={() => touch(`packagings.${i}.qty`)}
-                        error={err(`packagings.${i}.qty`)}
-                      />
-                      <div>
-                        <p className="mb-[7px] mt-4 text-[13px] font-semibold text-fg-dim">Unité du contenu</p>
-                        <Segmented
-                          label={`Unité du contenu de l’emballage ${i + 1}`}
-                          full
-                          value={k.unit}
-                          onChange={(u) => setPack(k.key, { unit: u })}
-                          options={[
-                            { value: 'kg', label: 'kg' },
-                            { value: 'g', label: 'g' },
-                            { value: 'piece', label: 'pièces' },
-                          ]}
-                        />
-                      </div>
-                    </div>
-                    <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint">Obligatoire. Ce qu’il y a dans un seul emballage : 4 kg de fruits, 500 g, 6 pièces…</p>
-
-                    {/* 2. Son prix */}
-                    <p className={head}>Prix</p>
-                    <Field
-                      label="Prix de l’emballage entier"
-                      optional
-                      inputMode="decimal"
-                      placeholder="Non fixé"
-                      suffix="€"
-                      value={k.price}
-                      onValue={(val) => setPack(k.key, { price: val })}
-                      onBlur={() => touch(`packagings.${i}.price`)}
-                      error={err(`packagings.${i}.price`)}
-                      hint={v.price === null ? 'Jamais un prix au kilo : le prix de tout l’emballage. Laissé vide, le client lit « À confirmer ».' : `${perUnit ? `Pour l’emballage entier, soit ${perUnit}.` : 'Pour l’emballage entier.'}${globalRef}`}
-                    />
-                    {priceAlert && (
-                      <p role="status" className="mt-2.5 rounded-2xl border border-star/40 bg-star/10 px-3.5 py-2.5 text-[13px] font-semibold leading-[19px] text-star" data-alerte="prix">
-                        À vérifier : {priceAlert}
-                      </p>
-                    )}
-
-                    {/* 3. Combien d'emballages le client commande */}
-                    <p className={head}>Nombre d’emballages par commande</p>
-                    <div className="grid grid-cols-3 gap-2.5">
-                      <Field label="Palier" inputMode="numeric" compact placeholder="1" value={k.step} onValue={(val) => setPack(k.key, { step: val })} onBlur={() => touch(`packagings.${i}.step`)} error={err(`packagings.${i}.step`)} />
-                      <Field label="Minimum" inputMode="numeric" compact placeholder="Vide" value={k.min} onValue={(val) => setPack(k.key, { min: val })} onBlur={() => touch(`packagings.${i}.min`)} error={err(`packagings.${i}.min`)} />
-                      <Field label="Maximum" inputMode="numeric" compact placeholder="Aucun" value={k.max} onValue={(val) => setPack(k.key, { max: val })} onBlur={() => touch(`packagings.${i}.max`)} error={err(`packagings.${i}.max`)} />
-                    </div>
-                    {!ruleBad && (
-                      <p className="mt-3 rounded-2xl bg-black/20 px-3.5 py-2.5 text-[13px] font-semibold leading-[19px]" data-regle="emballage">
-                        {packRuleText(v)}
-                        {low && <span className="font-medium text-fg-dim"> — soit {high ? `de ${low} à ${high}` : `${low} au minimum`}.</span>}
-                      </p>
-                    )}
-                    <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint">
-                      Comptés en emballages entiers, jamais en kilos. Le palier est le nombre ajouté à chaque appui sur « + ». Minimum vide : un palier. Maximum vide : aucun maximum.
-                    </p>
-
-                    <p className="mb-[7px] mt-5 text-[13px] font-semibold text-fg-dim">Proposé à</p>
-                    <Segmented
-                      label={`Public de l’emballage ${i + 1}`}
-                      full
-                      value={k.audience}
-                      onChange={(a) => setPack(k.key, { audience: a })}
-                      options={[
-                        { value: 'tous', label: 'Tous' },
-                        { value: 'particuliers', label: 'Particuliers' },
-                        { value: 'pros', label: 'Pros' },
-                      ]}
-                    />
-                    <ToggleRow
-                      title={`Emballage ${i + 1} proposé`}
-                      detail={k.available ? 'Visible sur la fiche du produit.' : 'Masqué : conservé ici, invisible pour les clients.'}
-                      checked={k.available}
-                      onChange={(val) => setPack(k.key, { available: val })}
-                    />
-
-                    {/* 4. Pays par pays : proposé ou non, au prix d'origine ou à un prix propre. */}
-                    <CountryPrices
-                      groups={k.countries}
-                      onChange={(countries) => setPack(k.key, { countries })}
-                      make={newPackCountry}
-                      base={`packagings.${i}.countryRules`}
-                      error={err}
-                      zone={zone}
-                      noun="réglage"
-                      title="Cet emballage, pays par pays"
-                      groupLabel="Dans"
-                      addLabel={['Régler cet emballage pour un pays', 'Ajouter un autre réglage par pays']}
-                      lead={
-                        <>
-                          Réglage d’origine ({v.price !== null ? euro(v.price) : 'prix à confirmer'}) : <span className="font-bold text-fg">{globalScope(k.countries)}</span>.
-                          {!k.available && ' Emballage masqué : proposé nulle part pour l’instant.'}
-                        </>
-                      }
-                      summary={(g) => {
-                        if (!g.available) return 'Non proposé';
-                        const own = shown(parseNum(g.price));
-                        const price = g.own ? `Prix propre · ${own !== null ? euro(own) : 'à saisir'}` : `Prix d’origine · ${v.price !== null ? euro(v.price) : 'à confirmer'}`;
-                        return `${price} · ${g.ownPhoto ? (g.photo ? 'photo propre' : 'photo à ajouter') : 'même photo'}`;
-                      }}
-                      fields={(g, j, patch) => {
-                        const ownUnit = packUnitPrice({ ...v, price: shown(parseNum(g.price)) });
-                        return (
-                          <>
-                            <ToggleRow
-                              title="Proposé dans ces pays"
-                              detail={g.available ? 'Les clients de ces pays peuvent choisir cet emballage.' : 'Non proposé : les clients de ces pays ne voient pas cet emballage.'}
-                              checked={g.available}
-                              onChange={(val) => patch({ available: val })}
-                            />
-                            {g.available && (
-                              <>
-                                <p className="mb-[7px] mt-3.5 text-[13px] font-semibold text-fg-dim">Prix de l’emballage dans ces pays</p>
-                                <Choice
-                                  label={`Prix de l’emballage ${i + 1} dans ces pays`}
-                                  value={g.own ? 'own' : 'origin'}
-                                  onChange={(m) => patch({ own: m === 'own' })}
-                                  options={[
-                                    ['origin', 'Prix d’origine'],
-                                    ['own', 'Prix propre'],
-                                  ]}
-                                />
-                                {g.own ? (
-                                  <Field
-                                    label="Prix de l’emballage entier dans ces pays"
-                                    inputMode="decimal"
-                                    placeholder="À saisir"
-                                    suffix="€"
-                                    value={g.price}
-                                    onValue={(val) => patch({ price: val })}
-                                    onBlur={() => touch(`packagings.${i}.countryRules.${j}.price`)}
-                                    error={err(`packagings.${i}.countryRules.${j}.price`)}
-                                    hint={ownUnit ? `Pour l’emballage entier, soit ${ownUnit}. Prix d’origine : ${v.price !== null ? euro(v.price) : 'à confirmer'}.` : `Prix d’origine : ${v.price !== null ? euro(v.price) : 'à confirmer'}.`}
-                                  />
-                                ) : (
-                                  <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint" data-prix-pays="origine">
-                                    Même prix qu’à l’origine : {v.price !== null ? `${euro(v.price)} l’emballage` : 'à confirmer'}. Il suivra le prix d’origine si vous le changez.
-                                  </p>
-                                )}
-
-                                {/* La photo : le même emballage qu'ailleurs, ou une photo propre à ces pays. */}
-                                <p className="mb-[7px] mt-4 text-[13px] font-semibold text-fg-dim">Photo de l’emballage dans ces pays</p>
-                                <Choice
-                                  label={`Photo de l’emballage ${i + 1} dans ces pays`}
-                                  value={g.ownPhoto ? 'own' : 'origin'}
-                                  onChange={(m) => patch({ ownPhoto: m === 'own' })}
-                                  options={[
-                                    ['origin', 'Même photo'],
-                                    ['own', 'Photo propre'],
-                                  ]}
-                                />
-                                {g.ownPhoto ? (
-                                  <PackPhoto
-                                    label="Photo propre à ces pays"
-                                    value={g.photo}
-                                    onChange={(photo) => patch({ photo })}
-                                    upload={uploadPackPhoto}
-                                    error={err(`packagings.${i}.countryRules.${j}.photo_url`)}
-                                    hint="Les clients de ces pays voient cette photo à la place de celle d’origine."
-                                  />
-                                ) : (
-                                  <p className="mt-2 flex items-center gap-2.5 px-1 text-[12.5px] leading-[18px] text-fg-faint" data-photo-pays="origine">
-                                    {k.photo && <img src={k.photo} alt="" className="h-9 w-9 shrink-0 rounded-lg border border-line bg-black/30 object-contain" />}
-                                    <span>Même emballage, même photo qu’à l’origine{k.photo ? '' : ' (pas encore de photo)'} : seul le prix peut changer.</span>
-                                  </p>
-                                )}
-                              </>
-                            )}
-                          </>
-                        );
-                      }}
-                    />
-                  </div>
-                );
-              })}
-              <GroupError message={attempted ? errors.packagings : undefined} />
-              <GhostButton className="mt-3 w-full" tone="leaf" label="Ajouter un emballage" disabled={form.packs.length >= PACK_LIMIT} onClick={addPack} />
-            </>
-          )}
-        </Section>
+        )}
 
         {/* ───── Disponibilité */}
         <Section id="disponibilite" expand title="Disponibilité" aside={<Chip tone={form.months.length === 0 ? 'star' : 'neutral'}>{seasonText(form.months)}</Chip>}>
@@ -1293,63 +1236,6 @@ function Editor({ product }: { product: Product | null }) {
             />
           </div>
           <GroupError message={err('months')} />
-        </Section>
-
-        {/* ───── Professionnels */}
-        <Section id="professionnels" expand title="Prix grossistes et importateurs" aside={<Chip>{plural(form.offers.length, 'offre', 'offres')}</Chip>}>
-          <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
-            {form.offers.length === 0
-              ? 'Aucune offre : ce produit n’apparaît pas dans l’espace des grossistes et importateurs. Les particuliers ne sont pas concernés.'
-              : 'Leurs prix, à part de ceux des particuliers. Une offre par mode de transport ; un prix laissé vide s’affiche « Prix à confirmer » et n’entre dans aucun total.'}
-          </p>
-          {!proAllowed && (
-            <div className="mt-3">
-              <Notice tone="star" title="Rayon masqué aux grossistes et importateurs">
-                Aucune offre de ce produit n’est publiée pour eux{form.offers.length > 0 ? ' : celles ci-dessous sont conservées, sans être proposées' : ''}. Ce réglage se change dans Rayons.
-              </Notice>
-            </div>
-          )}
-          <div className="mt-3.5 flex flex-col gap-3">
-            {form.offers.map((o, i) => (
-              <OfferCard
-                key={o.key}
-                offer={o}
-                index={i}
-                rules={rules}
-                zone={zone}
-                error={err}
-                touch={touch}
-                invalid={shownUnder(`wholesale.${i}.`)}
-                startOpen={freshOffers.includes(o.key)}
-                onChange={(patch) => setOffer(o.key, patch)}
-                onRemove={() => removeOffer(o.key)}
-              />
-            ))}
-          </div>
-          {samePrice.length > 0 && (
-            <p role="status" className="mt-3 rounded-2xl border border-star/40 bg-star/10 px-3.5 py-2.5 text-[13px] font-semibold leading-[19px] text-star" data-alerte="meme-prix">
-              À vérifier : {samePrice.join(', ')} — c’est exactement le prix des particuliers ({euro(priceNumber as number)} le kg). Les deux publics ont normalement des prix différents.
-            </p>
-          )}
-          <GroupError message={err('wholesale')} />
-          {freeModes.length > 0 && (
-            <div className="mt-3.5 flex flex-wrap gap-2.5">
-              {freeModes.map((m) => (
-                <GhostButton
-                  key={String(m)}
-                  compact
-                  tone="leaf"
-                  icon={m === 'avion' ? airplaneOutline : m === 'bateau' ? boatOutline : cubeOutline}
-                  label={m === 'avion' ? 'Ajouter l’avion' : m === 'bateau' ? 'Ajouter le bateau' : 'Ajouter une offre standard'}
-                  onClick={() => {
-                    const offer = newOffer(m);
-                    setFreshOffers((k) => [...k, offer.key]);
-                    set('offers', [...form.offers, offer]);
-                  }}
-                />
-              ))}
-            </div>
-          )}
         </Section>
 
         {/* ───── Données d'exemple */}

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { add, airplaneOutline, appsOutline, checkmarkCircle, chevronForward, cloudOfflineOutline, createOutline, flaskOutline, imageOutline, linkOutline, pricetagOutline, shieldCheckmarkOutline, timeOutline } from '../lib/glyphs';
+import { add, airplaneOutline, appsOutline, basketOutline, checkmarkCircle, chevronForward, cloudOfflineOutline, createOutline, flaskOutline, imageOutline, linkOutline, pricetagOutline, shieldCheckmarkOutline, timeOutline } from '../lib/glyphs';
 import { useAuth } from '../contexts/AuthContext';
 import { useData, type Product } from '../contexts/DataContext';
 import { Wordmark } from '../components/Shell';
@@ -9,7 +9,10 @@ import { Icon } from '../components/Icon';
 import { CategoryRail, ProductArt, priceInfo } from '../components/catalog';
 import { Chip, ErrorPanel, Page, SectionHead, SkeletonRows } from '../components/ui';
 import { MONTHS, ago, count, currentMonth, isAllYear, plural } from '../lib/format';
+import { api } from '../lib/api';
+import type { Cart } from '../contexts/OrdersContext';
 import { cx, glow } from '../lib/ui';
+import { sp, useSpace } from '../lib/space';
 
 type Task = { key: string; tone: 'danger' | 'star' | 'neutral'; icon: string; title: string; detail: string; to: string };
 
@@ -53,9 +56,9 @@ function Figure({ value, label, to, tone }: { value: number; label: string; to: 
   );
 }
 
-function Tile({ to, label, value, detail, tone }: { to: string; label: string; value: number; detail: string; tone?: 'star' | 'leaf' }) {
+function Tile({ to, label, value, detail, tone, wide }: { to: string; label: string; value: number; detail: string; tone?: 'star' | 'leaf'; wide?: boolean }) {
   return (
-    <Link to={to} className="press card block p-4">
+    <Link to={to} className={cx('press card block p-4', wide && 'col-span-2')}>
       <span className="label-voice block truncate text-[12px] text-fg-faint">{label}</span>
       <span className={cx('poster-voice tabular mt-1.5 block text-[38px] leading-[38px]', tone === 'star' && value > 0 && 'text-star', tone === 'leaf' && 'text-leaf')}>
         <CountUp value={value} />
@@ -68,7 +71,7 @@ function Tile({ to, label, value, detail, tone }: { to: string; label: string; v
 function SeasonCard({ product: p }: { product: Product }) {
   const price = priceInfo(p);
   return (
-    <Link to={`/produits/${p.id}`} className="press card flex w-[232px] shrink-0 items-center gap-3 p-2.5 pr-3.5">
+    <Link to={sp(`/produits/${p.id}`)} className="press card flex w-[232px] shrink-0 items-center gap-3 p-2.5 pr-3.5">
       <ProductArt product={p} size={76} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[15.5px] font-bold leading-5">{p.name}</span>
@@ -83,19 +86,41 @@ function SeasonCard({ product: p }: { product: Product }) {
 
 /** Ce que l'application d'achat garde sur l'appareil du client : aucune donnée n'arrive ici. */
 const NOT_CONNECTED = [
-  { title: 'Commandes des particuliers', why: 'Gardées sur le téléphone du client : leur envoi vers l’espace commandes reste à développer dans l’application.' },
-  { title: 'Demandes professionnelles', why: 'Prêtes à partir vers l’espace commandes : il reste à renseigner TEAM_ENDPOINT dans l’application.' },
-  { title: 'Comptes clients', why: 'Créés et conservés sur chaque appareil, sans serveur.' },
-  { title: 'Paiements', why: 'Parcours de démonstration : aucun prestataire n’est branché.' },
-  { title: 'Avis et notes', why: 'Aucun système d’avis : les notes affichées sont des exemples.' },
-  { title: 'Vidéos de l’équipe', why: 'Vidéos de démonstration embarquées : VIDEOS_ENDPOINT vaut null.' },
+  { title: 'Paiements', why: 'Aucun prestataire n’est branché : l’équipe pointe ici le paiement reçu.' },
+  { title: 'Comptes clients', why: 'Créés et conservés sur chaque appareil, sans serveur (leur panier en cours, lui, arrive ici).' },
+  { title: 'Messages de suivi', why: 'Envoyés à l’application à chaque statut, pas encore affichés au client.' },
+  { title: 'Avis et notes', why: 'Aucun système d’avis : les notes affichées sont des exemples.' },
 ];
+
+/** Paniers en cours (espace commandes) : actifs, et abandonnés pas encore relancés depuis leur dernière modification. */
+function useCartSummary() {
+  const [summary, setSummary] = useState<{ active: number; toContact: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api<{ carts: Cart[] }>('/api/orders?vue=paniers')
+      .then(({ carts: all }) => {
+        if (!alive) return;
+        const carts = all.filter((c) => c.account?.type !== 'pro');
+        const relaunched = (c: Cart) => c.contacts.some((k) => k.at > c.updated_at);
+        setSummary({ active: carts.filter((c) => c.status === 'actif').length, toContact: carts.filter((c) => c.status === 'abandonne' && !relaunched(c)).length });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return summary;
+}
 
 export default function Dashboard() {
   const { products, categories, settings, activity, loading, error, reload, issuesOf, pendingRefs } = useData();
   const { isOwner } = useAuth();
   const [showOff, setShowOff] = useState(false);
   const month = currentMonth();
+  const { space } = useSpace();
+  const cartSummary = useCartSummary();
+  // Paniers en cours : ceux des particuliers seulement.
+  const carts = space === 'b2c' ? cartSummary : null;
 
   const s = useMemo(() => {
     const active = products.filter((p) => !p.archived);
@@ -105,7 +130,7 @@ export default function Dashboard() {
     const visible = validated.filter((p) => p.available);
     const withIssues = active.map((p) => ({ p, issues: issuesOf(p) })).filter((x) => x.issues.length > 0);
     const has = (code: string) => withIssues.filter((x) => x.issues.some((i) => i.code === code)).length;
-    const offers = active.flatMap((p) => p.wholesale.map((o) => ({ p, o })));
+    const offers = active.flatMap((p) => (p.pro?.offers ?? []).filter((o) => o.active !== false).map((o) => ({ p, o })));
     const inSeason = visible.filter((p) => p.months.includes(month));
     const counts: Record<string, number> = {};
     for (const p of active) counts[p.category] = (counts[p.category] ?? 0) + 1;
@@ -171,11 +196,14 @@ export default function Dashboard() {
     if (s.example > 0) {
       list.push({ key: 'exemple', tone: 'neutral', icon: flaskOutline, title: `${plural(s.example, 'fiche', 'fiches')} en données d’exemple`, detail: 'Prix, origines et notes repris du catalogue d’exemple de l’application : à vérifier un par un.', to: '/produits?etat=exemple' });
     }
+    if (carts && carts.toContact > 0) {
+      list.push({ key: 'paniers', tone: 'star', icon: basketOutline, title: `${plural(carts.toContact, 'panier abandonné', 'paniers abandonnés')} à relancer`, detail: 'Sans modification depuis 24 h : un message pré-rempli attend dans chaque fiche.', to: '/commandes/paniers' });
+    }
     if (settings?.link && !settings.link.appLinked) {
       list.push({ key: 'link', tone: 'neutral', icon: linkOutline, title: 'Application d’achat non reliée', detail: 'Vos modifications sont publiées ici, mais l’application lit encore son catalogue embarqué.', to: '/reglages?section=publication' });
     }
     return list;
-  }, [s, pendingRefs, settings, isOwner]);
+  }, [s, pendingRefs, settings, isOwner, carts]);
 
   if (error) {
     return (
@@ -199,14 +227,16 @@ export default function Dashboard() {
 
       <div className="px-5 pt-6 lg:pt-10">
         <h1 className="font-display text-[32px] font-semibold leading-[38px]">
-          Le catalogue <span className="font-light italic text-fg-dim">en {MONTHS[month - 1]}</span>
+          {space === 'b2b' ? 'Catalogue pros' : 'Catalogue particuliers'} <span className="font-light italic text-fg-dim">en {MONTHS[month - 1]}</span>
         </h1>
         <p className="mt-1.5 text-[14.5px] leading-5 text-fg-dim">
           {loading
             ? 'Lecture du catalogue…'
             : s.active.length === 0
               ? 'Le catalogue est vide.'
-              : `${plural(s.visible.length, 'produit visible', 'produits visibles')} sur ${count(s.active.length)}, dont ${count(s.retail)} proposé${s.retail > 1 ? 's' : ''} aux particuliers.`}
+              : space === 'b2b'
+                ? `${plural(s.visible.length, 'produit en vente', 'produits en vente')} sur ${count(s.active.length)}, ${plural(s.offers, 'offre', 'offres')} avion, bateau ou standard.`
+                : `${plural(s.visible.length, 'produit visible', 'produits visibles')} sur ${count(s.active.length)}, dont ${count(s.retail)} proposé${s.retail > 1 ? 's' : ''} aux particuliers.`}
         </p>
       </div>
 
@@ -237,9 +267,9 @@ export default function Dashboard() {
               <div className="relative">
                 <span className="label-voice text-[13px] text-leaf">État du catalogue</span>
                 <div className="mt-4 grid max-w-[78%] grid-cols-3 gap-3 sm:max-w-[70%]">
-                  <Figure value={s.active.length} label="Produits" to="/produits" />
-                  <Figure value={s.visible.length} label="Visibles" to="/produits?etat=visibles" tone="leaf" />
-                  <Figure value={s.hidden} label="Masqués" to="/produits?etat=masques" />
+                  <Figure value={s.active.length} label="Produits" to={sp('/produits')} />
+                  <Figure value={s.visible.length} label="Visibles" to={sp('/produits?etat=visibles')} tone="leaf" />
+                  <Figure value={s.hidden} label="Masqués" to={sp('/produits?etat=masques')} />
                 </div>
                 <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-dashed border-line-strong pt-4">
                   {s.unvalidated > 0 && <Chip tone="danger">{plural(s.unvalidated, 'fiche non publiée', 'fiches non publiées')}</Chip>}
@@ -253,10 +283,13 @@ export default function Dashboard() {
             </section>
 
             <div className="mx-5 mt-3 grid grid-cols-2 gap-3">
-              <Tile to="/produits?etat=a-completer" label="À compléter" value={s.incomplete} tone="star" detail={s.incomplete === 0 ? 'Toutes les fiches sont complètes.' : 'Fiches où il manque une information.'} />
-              <Tile to="/produits?etat=exemple" label="Données d’exemple" value={s.example} detail={s.example === 0 ? 'Plus aucune donnée d’exemple.' : 'Fiches à vérifier avant mise en service.'} />
-              <Tile to="/prix?vue=pro" label="Offres pro" value={s.offers} detail={`Sur ${plural(s.offerProducts, 'produit', 'produits')}.`} />
-              <Tile to="/produits?etat=saison" label={`De saison`} value={s.inSeason.length} tone="leaf" detail={`Visibles et de saison en ${MONTHS[month - 1]}.`} />
+              <Tile to={sp('/produits?etat=a-completer')} label="À compléter" value={s.incomplete} tone="star" detail={s.incomplete === 0 ? 'Toutes les fiches sont complètes.' : 'Fiches où il manque une information.'} />
+              <Tile to={sp('/produits?etat=exemple')} label="Données d’exemple" value={s.example} detail={s.example === 0 ? 'Plus aucune donnée d’exemple.' : 'Fiches à vérifier avant mise en service.'} />
+              {space === 'b2b' && <Tile to={sp('/prix?vue=pro')} label="Offres pro" value={s.offers} detail={`Sur ${plural(s.offerProducts, 'produit', 'produits')}.`} />}
+              <Tile to={sp('/produits?etat=saison')} label={`De saison`} value={s.inSeason.length} tone="leaf" detail={`Visibles et de saison en ${MONTHS[month - 1]}.`} />
+              {carts && (
+                <Tile wide to={sp('/commandes/paniers')} label="Paniers actifs" value={carts.active} tone="leaf" detail={carts.active === 0 ? 'Aucun panier en cours dans l’application.' : 'Paniers modifiés il y a moins de 24 h, dans l’application.'} />
+              )}
             </div>
 
             <SectionHead title="À traiter" right={tasks.length > 0 ? <span className="text-[13px] font-semibold text-fg-faint">{plural(tasks.length, 'tâche', 'tâches')}</span> : undefined} />
@@ -312,14 +345,14 @@ export default function Dashboard() {
                 </Link>
               ))}
             </div>
-            <Link to="/produits/nouveau" className="press mx-5 mt-4 flex min-h-[54px] items-center justify-between rounded-full border border-line-strong pl-5 pr-2">
+            <Link to={sp('/produits/nouveau')} className="press mx-5 mt-4 flex min-h-[54px] items-center justify-between rounded-full border border-line-strong pl-5 pr-2">
               <span className="text-[15px] font-bold">Ajouter un produit</span>
               <span className="grid h-10 w-10 place-items-center rounded-full bg-leaf text-on-leaf">
                 <Icon src={add} size={22} />
               </span>
             </Link>
 
-            <SectionHead title="Rayons" right={<Link to="/rayons" className="press -mr-2 flex min-h-11 min-w-11 items-center justify-center px-2 text-[13.5px] font-bold text-leaf">Gérer</Link>} />
+            <SectionHead title="Rayons" right={<Link to={sp('/rayons')} className="press -mr-2 flex min-h-11 min-w-11 items-center justify-center px-2 text-[13.5px] font-bold text-leaf">Gérer</Link>} />
             {categories.length === 0 ? (
               <p className="px-5 pt-3 text-[14px] text-fg-dim">Aucun rayon pour l’instant.</p>
             ) : (
@@ -350,8 +383,8 @@ export default function Dashboard() {
             <SectionHead title="Hors de cette administration" />
             <div className="card mx-5 mt-3.5 p-4">
               <p className="text-[13.5px] leading-5 text-fg-dim">
-                L’application d’achat n’envoie encore aucune donnée à un serveur. L’espace commandes est prêt à les recevoir ; tant
-                qu’elle n’est pas reliée, il ne peut montrer que des exemples, signalés comme tels.
+                Reliée (variable EXPO_PUBLIC_CONTROL_TOWER_URL), l’application d’achat lit le catalogue publié ici et envoie à
+                l’espace commandes ses commandes, demandes professionnelles, produits introuvables et réactions aux vidéos.
               </p>
               <button
                 type="button"

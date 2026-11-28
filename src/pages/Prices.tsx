@@ -23,10 +23,14 @@ import { messageOf } from '../lib/api';
 import { euro, kgText, normalize, numStr, parseNum, plural, seasonText } from '../lib/format';
 import { cx } from '../lib/ui';
 import { DEFAULT_RULES, modeLabel, resolveOffer, validateProduct, type ProductInput } from '../../shared/catalog.js';
+import { sp, useSpace } from '../lib/space';
+import { PRO_GROUPS, PRO_GROUP_IDS, PRO_MODE_LABEL, PRO_SIGN, validatePro, type ProGroupId } from '../../shared/pro.js';
 
 type View = 'particuliers' | 'pro' | 'dispo';
 type OfferEdit = { exw?: string; fob?: string; available?: boolean };
-type Edit = { price?: string; available?: boolean; offers?: Record<number, OfferEdit> };
+type Edit = { price?: string; available?: boolean; offers?: Record<number, OfferEdit>; pro?: Record<string, { exw?: string; fob?: string }> };
+/** Clé d'une case pro : `<n° de l'offre>:<groupe>`. */
+const proKey = (i: number, g: ProGroupId) => `${i}:${g}`;
 
 /** Traduit une saisie en changements réels. `null` : rien n'a changé par rapport à la base. */
 /** Nombre de pays qui ont leur propre prix, pour les particuliers ou pour les professionnels. */
@@ -71,10 +75,34 @@ function changesOf(p: Product, e: Edit | undefined): Partial<ProductInput> | nul
     });
     if (changed) changes.wholesale = next;
   }
+  // Espace Pros : prix EXW / FOB par mode et par groupe de pays (fiche pro).
+  if (e.pro && p.pro) {
+    let changed = false;
+    const offers = p.pro.offers.map((o, i) => ({
+      ...o,
+      groups: Object.fromEntries(
+        PRO_GROUP_IDS.map((g) => {
+          const ce = e.pro?.[proKey(i, g)];
+          const row = { ...o.groups[g] };
+          if (ce?.exw !== undefined && parseNum(ce.exw) !== row.EXW) {
+            row.EXW = parseNum(ce.exw);
+            changed = true;
+          }
+          if (ce?.fob !== undefined && parseNum(ce.fob) !== row.FOB) {
+            row.FOB = parseNum(ce.fob);
+            changed = true;
+          }
+          return [g, row];
+        }),
+      ) as typeof o.groups,
+    }));
+    if (changed) (changes as Record<string, unknown>).pro = { ...p.pro, offers };
+  }
   return Object.keys(changes).length > 0 ? changes : null;
 }
 
-function PriceInput({ value, onChange, label, suffix, invalid, disabled, changed }: {
+function PriceInput({ value, onChange, label, suffix, invalid, disabled, changed, wide }: {
+  wide?: boolean;
   value: string;
   onChange: (v: string) => void;
   label: string;
@@ -96,7 +124,8 @@ function PriceInput({ value, onChange, label, suffix, invalid, disabled, changed
         aria-invalid={invalid || undefined}
         onChange={(e) => onChange(e.target.value)}
         onFocus={(e) => e.target.select()}
-        className={cx('field field-compact tabular w-full pr-[42px] text-right', changed && !invalid && 'border-leaf')}
+        style={{ paddingRight: suffix.length > 2 ? (wide ? 92 : 64) : 42 }}
+        className={cx('field field-compact tabular w-full text-right', changed && !invalid && 'border-leaf')}
       />
       <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[12px] font-bold text-fg-faint">{suffix}</span>
     </label>
@@ -107,7 +136,9 @@ export default function Prices() {
   const { products, categories, settings, loading, error, reload, bulkUpdate } = useData();
   const [params, setParams] = useSearchParams();
   const toast = useToast();
-  const view = (['particuliers', 'pro', 'dispo'].includes(params.get('vue') ?? '') ? params.get('vue') : 'particuliers') as View;
+  // Chaque espace ses prix : Particuliers (prix au kilo ou à la pièce), Pros (EXW / FOB par groupe).
+  const { space } = useSpace();
+  const view = (params.get('vue') === 'dispo' ? 'dispo' : space === 'b2b' ? 'pro' : 'particuliers') as View;
   const [query, setQuery] = useState('');
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [serverErrors, setServerErrors] = useState<Record<string, string>>({});
@@ -122,8 +153,10 @@ export default function Prices() {
       .map((p) => {
         const changes = changesOf(p, edits[p.id]);
         if (!changes) return null;
-        const { errors } = validateProduct({ ...p, ...changes }, { categoryIds, rules });
-        return { product: p, changes, error: Object.values(errors)[0] as string | undefined };
+        const { errors } = validateProduct({ ...p, ...changes, ...(p.space === 'b2b' ? { retail: null, wholesale: [] } : null) }, { categoryIds, rules });
+        const nextPro = (changes as { pro?: unknown }).pro;
+        const proErrors = nextPro ? validatePro(nextPro).errors : {};
+        return { product: p, changes, error: (Object.values(errors)[0] ?? Object.values(proErrors)[0]) as string | undefined };
       })
       .filter((x): x is NonNullable<typeof x> => !!x);
   }, [active, edits, categories, rules]);
@@ -152,6 +185,11 @@ export default function Prices() {
       ...all,
       [id]: { ...all[id], offers: { ...all[id]?.offers, [index]: { ...all[id]?.offers?.[index], ...patch } } },
     }));
+    setServerErrors((all) => (all[id] ? Object.fromEntries(Object.entries(all).filter(([key]) => key !== id)) : all));
+  };
+
+  const editPro = (id: string, k: string, patch: { exw?: string; fob?: string }) => {
+    setEdits((all) => ({ ...all, [id]: { ...all[id], pro: { ...all[id]?.pro, [k]: { ...all[id]?.pro?.[k], ...patch } } } }));
     setServerErrors((all) => (all[id] ? Object.fromEntries(Object.entries(all).filter(([key]) => key !== id)) : all));
   };
 
@@ -190,7 +228,7 @@ export default function Prices() {
   const shown = active.filter((p) => {
     if (needle && !normalize(`${p.name} ${p.variety} ${p.origin}`).includes(needle)) return false;
     // Les rayons masqués aux grossistes et importateurs n'ont pas d'offre publiée.
-    if (view === 'pro') return p.wholesale.length > 0 && categories.find((c) => c.id === p.category)?.pro_visible !== false;
+    if (view === 'pro') return (p.pro?.offers ?? []).length > 0;
     return true;
   });
   const withoutRetail = view === 'particuliers' ? shown.filter((p) => !p.retail).length : 0;
@@ -205,12 +243,12 @@ export default function Prices() {
 
   const RowHead = ({ p, right }: { p: Product; right?: React.ReactNode }) => (
     <div className="flex items-center gap-3">
-      <Link to={`/produits/${p.id}`} className="press flex min-w-0 flex-1 items-center gap-3" aria-label={`Ouvrir la fiche ${p.name}`}>
+      <Link to={sp(`/produits/${p.id}`)} className="press flex min-w-0 flex-1 items-center gap-3" aria-label={`Ouvrir la fiche ${p.name}`}>
         <ProductArt product={p} size={54} halo={0.5} />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[15px] font-bold leading-5">{p.name}</span>
           <span className="block truncate text-[12.5px] text-fg-faint">
-            {view === 'dispo' ? seasonText(p.months) : view === 'pro' ? plural(p.wholesale.length, 'offre', 'offres') : p.retail ? p.retail.unitLabel : 'Non vendu aux particuliers'}
+            {view === 'dispo' ? seasonText(p.months) : view === 'pro' ? plural(p.pro?.offers.length ?? 0, 'mode', 'modes') : p.retail ? p.retail.unitLabel : 'Non vendu aux particuliers'}
           </span>
           {/* Le prix modifié ici est le prix global : les pays qui ont leur propre prix se règlent dans la fiche. */}
           {view !== 'dispo' && countriesApart(p, view) > 0 && (
@@ -227,7 +265,7 @@ export default function Prices() {
   const RowFoot = ({ p, s }: { p: Product; s: { error?: string; locked: boolean } }) => (
     <>
       {s.locked && (
-        <Link to={`/produits/${p.id}`} className="mt-1 flex min-h-11 items-center gap-2 text-[12.5px] font-bold text-danger">
+        <Link to={sp(`/produits/${p.id}`)} className="mt-1 flex min-h-11 items-center gap-2 text-[12.5px] font-bold text-danger">
           <Icon src={shieldCheckmarkOutline} size={15} />
           Fiche à valider avant toute modification rapide — ouvrir
         </Link>
@@ -242,6 +280,8 @@ export default function Prices() {
 
   return (
     <Page>
+      {/* Modifications non enregistrées : la mise à jour automatique attend (components/Update.tsx). */}
+      <span hidden data-dirty={dirty ? 'true' : undefined} />
       <PageHeader title="Prix" accent="et disponibilités" subtitle="Saisissez en série, puis enregistrez tout d’un coup." />
 
       <div className="px-5">
@@ -249,10 +289,9 @@ export default function Prices() {
           label="Ce que vous mettez à jour"
           full
           value={view}
-          onChange={(v) => setParams(v === 'particuliers' ? {} : { vue: v }, { replace: true })}
+          onChange={(v) => setParams(v === 'dispo' ? { vue: v } : {}, { replace: true })}
           options={[
-            { value: 'particuliers', label: 'Particuliers' },
-            { value: 'pro', label: 'Professionnels' },
+            space === 'b2b' ? { value: 'pro', label: 'Prix EXW / FOB' } : { value: 'particuliers', label: 'Prix particuliers' },
             { value: 'dispo', label: 'Disponibilités' },
           ]}
         />
@@ -324,7 +363,7 @@ export default function Prices() {
                               />
                             </span>
                           ) : (
-                            <Link to={`/produits/${p.id}`} className="press flex min-h-11 shrink-0 items-center rounded-full border border-line px-3.5 text-[12.5px] font-bold text-fg-dim">
+                            <Link to={sp(`/produits/${p.id}`)} className="press flex min-h-11 shrink-0 items-center rounded-full border border-line px-3.5 text-[12.5px] font-bold text-fg-dim">
                               Ouvrir
                             </Link>
                           )
@@ -340,58 +379,36 @@ export default function Prices() {
                     <li key={p.id} className={rowFrame(s)}>
                       <RowHead p={p} />
                       <div className="mt-2 flex flex-col gap-2.5">
-                        {p.wholesale.map((o, i) => {
-                          const oe = e?.offers?.[i];
-                          const perContainer = o.mode === 'bateau' && o.priceUnit === 'conteneur';
-                          const exw = parseNum(oe?.exw ?? numStr(o.prices.EXW));
-                          const live = resolveOffer({ ...o, prices: { EXW: typeof exw === 'number' && exw > 0 ? exw : null, FOB: o.prices.FOB } }, rules, 'EXW');
-                          return (
-                            <div key={i} className="rounded-2xl bg-black/20 p-3">
-                              <div className="flex items-center gap-2">
-                                <span className="min-w-0 flex-1 truncate text-[13.5px] font-bold">
-                                  {modeLabel(o.mode)} <span className="font-medium text-fg-faint">· {perContainer ? 'au conteneur' : 'au kilo'}</span>
-                                </span>
-                                {!o.available && <Chip>Fermée</Chip>}
-                              </div>
-                              <div className="mt-2.5 grid grid-cols-2 gap-2.5">
-                                <div>
-                                  <span className="mb-1 block text-[11.5px] font-bold tracking-[0.04em] text-fg-faint">EXW</span>
-                                  <PriceInput
-                                    label={`Prix EXW de ${p.name}, ${modeLabel(o.mode)}`}
-                                    suffix="€"
-                                    value={oe?.exw ?? numStr(o.prices.EXW)}
-                                    onChange={(v) => editOffer(p.id, i, { exw: v })}
-                                    invalid={!!s.error}
-                                    changed={oe?.exw !== undefined && parseNum(oe.exw) !== o.prices.EXW}
-                                    disabled={s.locked}
-                                  />
-                                </div>
-                                <div>
-                                  <span className="mb-1 block text-[11.5px] font-bold tracking-[0.04em] text-fg-faint">FOB</span>
-                                  <PriceInput
-                                    label={`Prix FOB de ${p.name}, ${modeLabel(o.mode)}`}
-                                    suffix="€"
-                                    value={oe?.fob ?? numStr(o.prices.FOB)}
-                                    onChange={(v) => editOffer(p.id, i, { fob: v })}
-                                    invalid={!!s.error}
-                                    changed={oe?.fob !== undefined && parseNum(oe.fob) !== o.prices.FOB}
-                                    disabled={s.locked}
-                                  />
-                                </div>
-                              </div>
-                              <p className={cx('mt-2 text-[12px] leading-[17px]', live.noPrice ? 'text-star' : 'text-fg-faint')}>
-                                {live.noPrice
-                                  ? live.missing === 'poids'
-                                    ? 'Poids du conteneur non défini : aucun total calculé.'
-                                    : 'EXW à confirmer : aucun total calculé.'
-                                  : o.mode === 'bateau'
-                                    ? `EXW : ${euro(live.price)} le conteneur${live.containerKg ? ` de ${kgText(live.containerKg)}` : ''}.`
-                                    : `EXW : minimum ${kgText(live.min)} = ${euro(live.price * live.min)}.`}
-                              </p>
+                        {(p.pro?.offers ?? []).map((o, i) => (
+                          <div key={i} className="rounded-2xl bg-black/20 p-3">
+                            <div className="flex items-center gap-2">
+                              <span className="min-w-0 flex-1 truncate text-[13.5px] font-bold">
+                                {PRO_MODE_LABEL[o.mode]} <span className="font-medium text-fg-faint">· au kilo</span>
+                              </span>
+                              {!o.active && <Chip>Non proposé</Chip>}
                             </div>
-                          );
-                        })}
+                            {PRO_GROUPS.filter((g) => o.groups[g.id]?.offered).length === 0 ? (
+                              <p className="mt-2 text-[12.5px] text-star">Proposé dans aucun groupe de pays : à régler dans la fiche.</p>
+                            ) : (
+                              PRO_GROUPS.filter((g) => o.groups[g.id]?.offered).map((g) => {
+                                const ce = e?.pro?.[proKey(i, g.id)];
+                                const row = o.groups[g.id];
+                                const sign = PRO_SIGN[g.currency];
+                                return (
+                                  <div key={g.id} className="mt-2.5">
+                                    <span className="mb-1 block text-[11.5px] font-bold tracking-[0.04em] text-fg-faint">{g.label}</span>
+                                    <div className="grid grid-cols-2 gap-2.5">
+                                      <PriceInput label={`Prix EXW de ${p.name}, ${PRO_MODE_LABEL[o.mode]}, ${g.label}`} suffix={`EXW ${sign}`} value={ce?.exw ?? numStr(row.EXW)} onChange={(v) => editPro(p.id, proKey(i, g.id), { exw: v })} invalid={!!s.error} changed={ce?.exw !== undefined && parseNum(ce.exw) !== row.EXW} disabled={s.locked} wide={g.currency === 'XOF'} />
+                                      <PriceInput label={`Prix FOB de ${p.name}, ${PRO_MODE_LABEL[o.mode]}, ${g.label}`} suffix={`FOB ${sign}`} value={ce?.fob ?? numStr(row.FOB)} onChange={(v) => editPro(p.id, proKey(i, g.id), { fob: v })} invalid={!!s.error} changed={ce?.fob !== undefined && parseNum(ce.fob) !== row.FOB} disabled={s.locked} wide={g.currency === 'XOF'} />
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </div>
+                        ))}
                       </div>
+                      <p className="mt-2 text-[12px] leading-[17px] text-fg-faint">Case vide : « Prix sur demande ». Exceptions par pays : dans la fiche.</p>
                       <RowFoot p={p} s={s} />
                     </li>
                   );
@@ -411,7 +428,7 @@ export default function Prices() {
                         </span>
                       }
                     />
-                    {p.wholesale.length > 0 && (
+                    {space === 'b2c' && false && p.wholesale.length > 0 && (
                       <div className="mt-2 flex flex-col divide-y divide-line rounded-2xl bg-black/20 px-3">
                         {p.wholesale.map((o, i) => {
                           const open = e?.offers?.[i]?.available ?? o.available;

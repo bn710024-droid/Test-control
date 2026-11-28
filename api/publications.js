@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import supabase from './db-client.js';
 import { preflight, requireAdmin, optionalAdmin, readBody, log, serverError } from './_lib.js';
-import { loadSeals, stateOf, sealRows, unseal } from './_seal.js';
+import { loadSeals, stateOf, sealRows, unseal , spaceOf, rowSpace } from './_seal.js';
 import { tooMany } from './_limit.js';
 import { annonceState } from '../shared/orders.js';
 
@@ -97,6 +97,11 @@ function validateAnnonce(src, productIds) {
   if (imageUrl && !pathOf(imageUrl)) errors.image_url = 'Image invalide : elle doit être envoyée depuis cette page.';
   const accent = imageUrl ? '' : str(src.accent);
   if (accent.length > 40) errors.accent = 'Accroche : 40 caractères au plus.';
+  // Surtitre et titre (annonce au modèle), facultatifs : vides, l'application les déduit du produit.
+  const kicker = imageUrl ? '' : str(src.kicker);
+  if (kicker.length > 40) errors.kicker = 'Surtitre : 40 caractères au plus.';
+  const title = imageUrl ? '' : str(src.title);
+  if (title.length > 40) errors.title = 'Titre : 40 caractères au plus.';
   const body = str(src.body);
   // Le modèle a toujours un produit et un bouton ; une image peut se suffire à elle-même.
   const target = validateLink(imageUrl ? src : { ...src, link: 'button', button_label: '' }, productIds, errors, 'button');
@@ -112,7 +117,7 @@ function validateAnnonce(src, productIds) {
   const endsAt = date(src.ends_at);
   if (src.ends_at && !endsAt) errors.ends_at = 'Date de fin illisible.';
   else if (endsAt && startsAt && new Date(endsAt) <= new Date(startsAt)) errors.ends_at = 'La fin doit venir après le début.';
-  return { errors, value: { ...target, accent, body, image_url: imageUrl, demo: src.demo === true, starts_at: startsAt, ends_at: endsAt } };
+  return { errors, value: { ...target, accent, ...(kicker ? { kicker } : null), ...(title ? { title } : null), body, image_url: imageUrl, demo: src.demo === true, starts_at: startsAt, ends_at: endsAt } };
 }
 
 function validatePhotos(src) {
@@ -292,11 +297,16 @@ export default async function handler(req, res) {
       return await receiveReactions(req, readBody(req), all.data, seals, res);
     }
 
+    // Chaque espace a ses publications : ce qui est publié côté Pros n'apparaît que chez les pros.
+    const space = spaceOf(req);
+    all.data = all.data.filter((r) => rowSpace(r) === space);
+
     if (req.method === 'GET') {
       const pub = req.query?.public;
       const live = (kind) => all.data.filter((r) => r.kind === kind && r.published && stateOf('publications', r, seals) === 'ok');
+      // Cache court, comme le catalogue : une vidéo publiée est servie à l'application en quelques secondes.
       if (pub === 'videos') {
-        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15, stale-while-revalidate=60');
+        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');
         return res.status(200).json(
           live('video')
             .map((r) => ({
@@ -313,7 +323,7 @@ export default async function handler(req, res) {
         );
       }
       if (pub === 'photos') {
-        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=15, stale-while-revalidate=60');
+        res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');
         return res.status(200).json(
           live('photos')
             // De la plus récente à la plus ancienne ; le même jour, la dernière créée d'abord.
@@ -416,6 +426,7 @@ export default async function handler(req, res) {
       const { data, error } = await supabase
         .from('publications')
         .insert({
+          space,
           id: `${PREFIX[body.kind]}-${crypto.randomBytes(7).toString('hex')}`,
           kind: body.kind,
           data: checked.value,

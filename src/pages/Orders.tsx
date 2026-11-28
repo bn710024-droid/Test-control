@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link, NavLink, Outlet, ScrollRestoration } from 'react-router-dom';
+import { Link, NavLink, Outlet, ScrollRestoration, useLocation, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { OrdersProvider, useOrders, type Logistics, type Order, type OrderLine, type OrderPatch, type OrderStatus, type PayMethod } from '../contexts/OrdersContext';
-import { Backdrop } from '../components/Shell';
+import { Backdrop, MoreSheet } from '../components/Shell';
 import { Chip, EmptyState, ErrorPanel, Field, FilterChip, GhostButton, Notice, Page, PageHeader, PrimaryButton, Segmented, Sheet, SkeletonRows } from '../components/ui';
+import { CountryChips } from '../components/CountryChips';
 import { ApiError, messageOf } from '../lib/api';
-import { MONTHS, ago, count, dateTime, euro, kgText, money, normalize, plural } from '../lib/format';
+import { MONTHS, ago, amount, count, dateTime, kgText, money, normalize, plural } from '../lib/format';
 import { cx } from '../lib/ui';
 import { PRO_STAGES, clientNotice, proStageLabel, proStageOf, type ProStage } from '../../shared/orders.js';
 import { countryName, isCountryCode } from '../../shared/catalog.js';
+import { ACTIVITY, Kpi, Refresh, Row, contactLink, nameInitials } from './ordersKit';
+import { ClientCart } from './Carts';
+import { sp, useSpace, type Space } from '../lib/space';
 
 // ───────────── Repères communs
 
@@ -33,7 +37,6 @@ const METHODS: { id: PayMethod; label: string }[] = [
   { id: 'carte', label: 'Carte bancaire' },
 ];
 const PAYMENT: Record<string, string> = { orange_money: 'Orange Money', wave: 'Wave', virement: 'Virement bancaire', carte: 'Carte bancaire', mobile: 'Mobile money' };
-const ACTIVITY: Record<string, string> = { grossiste: 'Grossiste', importateur: 'Importateur', autre: 'Autre professionnel' };
 
 const customerName = (o: Order) => o.customer.company || o.customer.name || o.customer.email || o.customer.phone || 'Client sans nom';
 const customerKey = (o: Order) => (o.customer.account_id || o.customer.email || o.customer.phone || customerName(o)).toLowerCase();
@@ -41,11 +44,12 @@ const placeOf = (o: Order) => o.country || o.address || 'Adresse non renseignée
 const destinationOf = (o: Order) => (o.country && o.address.includes(o.country) ? o.address : [o.address, o.country].filter(Boolean).join(', '));
 /** Une commande annulée ne compte dans aucun montant. */
 const counted = (o: Order) => o.status !== 'annulee';
-const amountText = (o: Order) => (o.total > 0 ? `${euro(o.total)}${o.unpriced > 0 ? ' +' : ''}` : 'À confirmer');
-const nameInitials = (name: string) => {
-  const parts = name.replace(/\(.*?\)/g, '').trim().split(/\s+/).filter(Boolean);
-  return parts.length === 0 ? '?' : (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
-};
+// Devises jamais additionnées : les montants en euros ne comptent que les commandes en euros.
+const isEuro = (o: Order) => !o.currency || o.currency.toUpperCase() === 'EUR';
+const euroTotal = (o: Order) => (isEuro(o) ? o.total : 0);
+/** « · 2 commandes en F CFA non comptées » : ce que les montants en euros laissent de côté. */
+const otherCurrencyNote = (n: number) => (n > 0 ? ` ${n} ${n > 1 ? 'commandes' : 'commande'} dans une autre devise, non ${n > 1 ? 'comptées' : 'comptée'}.` : '');
+const amountText = (o: Order) => (o.total > 0 ? `${amount(o.total, o.currency)}${o.unpriced > 0 ? ' +' : ''}` : 'À confirmer');
 
 /** Sénégal : livraison par nos livreurs. Ailleurs : transit jusqu'à l'aéroport d'arrivée. */
 type Zone = 'senegal' | 'international' | 'inconnue';
@@ -172,7 +176,9 @@ function currentStep(o: Order) {
   return last && last.status === o.status && (o.type !== 'pro' || proStageOf(last) === proStageOf(o)) ? last : null;
 }
 /** Le client reste à prévenir du statut en cours (la simple arrivée de la commande n'en demande pas). */
-const needsNotice = (o: Order) => (o.type === 'pro' ? proStageOf(o) !== 'interet' : o.status !== 'attente') && !currentStep(o)?.notified_at;
+// Une commande livrée (reçue) ou annulée est close : plus rien à annoncer au client.
+const closed = (o: Order) => o.status === 'livree' || o.status === 'annulee';
+const needsNotice = (o: Order) => !closed(o) && (o.type === 'pro' ? proStageOf(o) !== 'interet' : o.status !== 'attente') && !currentStep(o)?.notified_at;
 
 /** Message au client pour le statut en cours, prêt à partir par WhatsApp ou par e-mail. */
 function noticeOf(o: Order) {
@@ -226,9 +232,9 @@ function useScope() {
 
 function sums(list: Order[]) {
   const live = list.filter(counted);
-  const ordered = live.reduce((s, o) => s + o.total, 0);
-  const paid = live.filter((o) => o.paid_at).reduce((s, o) => s + o.total, 0);
-  return { live, ordered, paid, due: ordered - paid };
+  const ordered = live.reduce((s, o) => s + euroTotal(o), 0);
+  const paid = live.filter((o) => o.paid_at).reduce((s, o) => s + euroTotal(o), 0);
+  return { live, ordered, paid, due: ordered - paid, other: live.filter((o) => !isEuro(o)).length };
 }
 
 // ───────────── Briques de la page « Livraison » : titres de groupe, listes groupées, lignes
@@ -261,29 +267,49 @@ function Column({ children }: { children: ReactNode }) {
 
 // ───────────── Cadre de l'espace : un univers à part, avec ses propres pages
 
-const TABS = [
-  { to: '/commandes', label: 'Commandes', short: 'Commandes', end: true },
-  { to: '/commandes/statuts', label: 'Statuts', short: 'Statuts', end: false },
-  { to: '/commandes/clients', label: 'Clients', short: 'Clients', end: false },
-  { to: '/commandes/statistiques', label: 'Statistiques', short: 'Stats', end: false },
-  { to: '/commandes/livraison', label: 'Livraison', short: 'Livraison', end: false },
-];
+// `phone: false` : sur téléphone, l'onglet passe sous « Plus » (la barre du bas reste courte).
+type OrdersTab = { to: string; label: string; short: string; end: boolean; phone?: boolean; hint?: string };
+/** Pages de l'espace commandes : celles des particuliers et celles des pros ne se mélangent pas. */
+const TABS_OF: Record<Space, OrdersTab[]> = {
+  b2c: [
+    { to: '/commandes', label: 'Commandes', short: 'Commandes', end: true },
+    { to: '/commandes/paniers', label: 'Paniers', short: 'Paniers', end: false, phone: false, hint: 'Paniers en cours dans l’application' },
+    { to: '/commandes/statuts', label: 'Statuts', short: 'Statuts', end: false },
+    { to: '/commandes/clients', label: 'Clients', short: 'Clients', end: false },
+    { to: '/commandes/statistiques', label: 'Statistiques', short: 'Stats', end: false },
+    { to: '/commandes/livraison', label: 'Livraison', short: 'Livraison', end: false },
+  ],
+  b2b: [
+    { to: '/commandes', label: 'Demandes', short: 'Demandes', end: true },
+    { to: '/commandes/programmes', label: 'Programmes', short: 'Progr.', end: false },
+    { to: '/commandes/statuts', label: 'Statuts', short: 'Statuts', end: false },
+    { to: '/commandes/clients', label: 'Acheteurs', short: 'Acheteurs', end: false },
+    { to: '/commandes/statistiques', label: 'Statistiques', short: 'Stats', end: false },
+  ],
+};
+const useTabs = () => TABS_OF[useSpace().space].map((t) => ({ ...t, to: sp(t.to) }));
 
 export function OrdersLayout() {
   const { user, canEdit } = useAuth();
+  const { pathname } = useLocation();
+  const [more, setMore] = useState(false);
+  const TABS = useTabs();
+  const { space } = useSpace();
+  const moreTabs = TABS.filter((t) => t.phone === false).map((t) => ({ to: t.to, label: t.label, end: t.end, hint: t.hint ?? '' }));
+  const moreActive = moreTabs.some((t) => pathname === t.to || pathname.startsWith(`${t.to}/`));
   return (
     <OrdersProvider key={user?.id ?? 'visite'}>
       <motion.div className="relative min-h-dvh" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.45 }}>
         <Backdrop tint="#C98A2B" />
         <header className="sticky top-0 z-30 border-b border-line bg-[rgba(11,14,9,0.86)] backdrop-blur-md" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="mx-auto flex h-16 w-full max-w-[1400px] items-center gap-3 px-4 lg:h-[76px] lg:px-8">
-            <Link to="/" aria-label="Retour à la tour de contrôle" className="press flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-3.5 text-[13.5px] font-bold">
+            <Link to={sp('/')} aria-label="Retour à la tour de contrôle" className="press flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-3.5 text-[13.5px] font-bold">
               <span aria-hidden>←</span>
               <span className="hidden min-[430px]:inline">Contrôle</span>
             </Link>
             <span className="flex min-w-0 flex-1 items-center gap-2.5">
               <span className="poster-voice min-w-0 truncate text-[22px] leading-none tracking-[0.1em] lg:text-[28px]">Tropicaura</span>
-              <span className="label-voice shrink-0 text-[12.5px] text-star lg:text-[13.5px]">Commandes</span>
+              <span className="label-voice shrink-0 text-[12.5px] text-star lg:text-[13.5px]">{space === 'b2b' ? 'Demandes · Pros' : 'Commandes · Particuliers'}</span>
             </span>
             <nav aria-label="Pages de l’espace commandes" className="hidden items-center gap-1 lg:flex">
               {TABS.map((tab) => (
@@ -317,7 +343,7 @@ export function OrdersLayout() {
         <nav aria-label="Pages de l’espace commandes" className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-2 lg:hidden" style={{ paddingBottom: 'calc(max(env(safe-area-inset-bottom), 14px))' }}>
           <span className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-bg via-bg/85 to-transparent" />
           <div className="no-scrollbar pointer-events-auto relative flex max-w-full items-center overflow-x-auto rounded-full border border-line-strong bg-bar p-1.5 max-[359px]:p-1">
-            {TABS.map((tab) => (
+            {TABS.filter((tab) => tab.phone !== false).map((tab) => (
               <NavLink key={tab.to} to={tab.to} end={tab.end} aria-label={tab.label} className="press press-deep block min-w-11 shrink-0 rounded-full">
                 {({ isActive }) => (
                   <span className={cx('relative flex h-11 items-center justify-center rounded-full px-3.5 text-[13.5px] transition-colors duration-300 max-[429px]:px-[7px] max-[429px]:text-[12.5px] max-[359px]:px-1 max-[359px]:text-[11.5px]', isActive ? 'font-extrabold text-bg-deep' : 'font-bold text-fg-dim')}>
@@ -328,7 +354,14 @@ export function OrdersLayout() {
                 )}
               </NavLink>
             ))}
+            <button type="button" onClick={() => setMore(true)} aria-haspopup="dialog" aria-label="Plus d’écrans" className="press press-deep block min-w-11 shrink-0 rounded-full">
+              <span className={cx('relative flex h-11 items-center justify-center rounded-full px-3.5 text-[13.5px] transition-colors duration-300 max-[429px]:px-[7px] max-[429px]:text-[12.5px] max-[359px]:px-1 max-[359px]:text-[11.5px]', moreActive ? 'font-extrabold text-bg-deep' : 'font-bold text-fg-dim')}>
+                {moreActive && <motion.span layoutId="onglet-commandes" initial={false} className="absolute inset-0 bg-star" style={{ borderRadius: 9999 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} />}
+                <span className="relative">Plus</span>
+              </span>
+            </button>
           </div>
+          <MoreSheet open={more} onClose={() => setMore(false)} tabs={moreTabs} />
         </nav>
         <ScrollRestoration />
       </motion.div>
@@ -336,17 +369,39 @@ export function OrdersLayout() {
   );
 }
 
-// ───────────── Éléments partagés
+// ───────────── Programme d'un acheteur pro
 
-function Kpi({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: 'leaf' | 'star' }) {
+const FREQUENCY_LABEL = { hebdomadaire: 'Chaque semaine', mensuelle: 'Chaque mois', ponctuelle: 'Ponctuelle' } as const;
+const UNIT_LABEL = { kg: 'kg', tonnes: 'tonnes', conteneurs: 'conteneurs' } as const;
+const day = (iso: string | null) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
+
+function ProgrammeDetail({ programme: g }: { programme: NonNullable<Order['programme']> }) {
+  const rows: [string, string][] = [
+    ['Quantité totale', `${g.quantity.toLocaleString('fr-FR')} ${UNIT_LABEL[g.unit]}`],
+    ['Période', g.end ? `du ${day(g.start)} au ${day(g.end)}` : `à partir du ${day(g.start)}`],
+    ['Fréquence', FREQUENCY_LABEL[g.frequency]],
+    ['Calibres', g.calibres.join(', ') || '—'],
+    ['Conditionnement', g.packaging || '—'],
+    ['Destination', [g.destination.place, g.destination.country].filter(Boolean).join(', ') || '—'],
+  ];
   return (
-    <div className="card min-w-0 p-4">
-      <span className="label-voice block truncate text-[12px] text-fg-faint">{label}</span>
-      <span className={cx('poster-voice tabular mt-1.5 block truncate text-[30px] leading-[32px]', tone === 'leaf' && 'text-leaf', tone === 'star' && 'text-star')}>{value}</span>
-      {detail && <span className="mt-1.5 block text-[12.5px] leading-[17px] text-fg-dim">{detail}</span>}
-    </div>
+    <>
+      <h3 className="mt-5 font-display text-[18px] font-semibold">Programme</h3>
+      <dl className="divide-y divide-line">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex min-h-[48px] items-center justify-between gap-4 py-1.5">
+            <dt className="shrink-0 text-[14px] text-fg-dim">{label}</dt>
+            <dd className="min-w-0 break-words text-right text-[14.5px] font-semibold">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {g.details && <p className="mt-2 rounded-[16px] border border-line bg-surface px-4 py-3 text-[14px] leading-[20px] text-fg-dim">{g.details}</p>}
+    </>
   );
 }
+
+// ───────────── Éléments partagés
+
 
 function StatusChips({ order: o, bare }: { order: Order; bare?: boolean }) {
   return (
@@ -385,16 +440,8 @@ function OrderCard({ order: o, onOpen }: { order: Order; onOpen: () => void }) {
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-2">
-      <dt className="shrink-0 text-[13px] text-fg-dim">{label}</dt>
-      <dd className="min-w-0 break-words text-right text-[14px] font-semibold">{children}</dd>
-    </div>
-  );
-}
 
-const contactLink = 'press inline-flex min-h-11 items-center rounded-full border border-line-strong px-4 text-[13.5px] font-bold';
+
 
 function Contact({ order: o }: { order: Order }) {
   const c = o.customer;
@@ -476,7 +523,7 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
   const next = o && FLOW.indexOf(o.status) >= 1 && FLOW.indexOf(o.status) < FLOW.length - 1 ? FLOW[FLOW.indexOf(o.status) + 1] : null;
 
   return (
-    <Sheet open={!!o} onClose={() => (busy ? undefined : (setSure(null), onClose()))} title={o ? `${o.type === 'pro' ? 'Demande' : 'Commande'} ${o.number}` : ''}>
+    <Sheet side open={!!o} onClose={() => (busy ? undefined : (setSure(null), onClose()))} title={o ? `${o.kind === 'programme' ? 'Programme' : o.type === 'pro' ? 'Demande' : 'Commande'} ${o.number}` : ''}>
       {o && (
         <>
           <p className="text-[13px] text-fg-dim">Passée le {dateTime(o.created_at)}</p>
@@ -489,9 +536,11 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
             </div>
           )}
 
+          {o.programme && <ProgrammeDetail programme={o.programme} />}
+
           {o.type === 'pro' && (
             <div className="mt-3">
-              <Notice tone="leaf" title="Demande professionnelle · rien n’est payé dans l’application">
+              <Notice tone="leaf" title={o.kind === 'programme' ? 'Programme · rien n’est payé dans l’application' : 'Demande professionnelle · rien n’est payé dans l’application'}>
                 Le client a envoyé son intérêt. Contactez-le pour convenir des quantités, du prix, du transport et du paiement, puis faites avancer la demande jusqu’au contrat et à la livraison.
               </Notice>
             </div>
@@ -585,7 +634,7 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
                       Envoyer la course
                     </a>
                   ) : canEdit && !courierPhone ? (
-                    <Link to="/commandes/livraison" className={contactLink}>
+                    <Link to={sp('/commandes/livraison')} className={contactLink}>
                       Ajouter son numéro
                     </Link>
                   ) : null}
@@ -638,7 +687,7 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
                       {o.gp_at ? 'Renvoyer' : 'Envoyer sur WhatsApp'}
                     </a>
                   ) : canEdit ? (
-                    <Link to="/commandes/livraison" className={contactLink}>
+                    <Link to={sp('/commandes/livraison')} className={contactLink}>
                       Ajouter son numéro
                     </Link>
                   ) : null}
@@ -665,18 +714,18 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
                   </span>
                   <span className="block text-[12.5px] text-fg-faint">
                     {qtyText(l)}
-                    {l.unit_price !== null ? ` × ${euro(l.unit_price)}` : ''}
+                    {l.unit_price !== null ? ` × ${amount(l.unit_price, o.currency)}` : ''}
                   </span>
                 </span>
-                <span className={cx('tabular shrink-0 text-[14.5px] font-extrabold', l.total === null && 'text-[12.5px] text-star')}>{l.total === null ? 'Prix à confirmer' : euro(l.total)}</span>
+                <span className={cx('tabular shrink-0 text-[14.5px] font-extrabold', l.total === null && 'text-[12.5px] text-star')}>{l.total === null ? 'Prix à confirmer' : amount(l.total, o.currency)}</span>
               </li>
             ))}
           </ul>
           <dl className="mt-1 border-t border-line-strong pt-1">
             {o.incoterm && <Row label="Incoterm">{o.incoterm}</Row>}
-            {o.transport_cost > 0 && <Row label="Transport">{euro(o.transport_cost)}</Row>}
+            {o.transport_cost > 0 && <Row label="Transport">{amount(o.transport_cost, o.currency)}</Row>}
             <Row label={o.unpriced > 0 ? 'Total des lignes chiffrées' : 'Total'}>
-              <span className="tabular text-[17px] font-extrabold">{o.total > 0 ? euro(o.total) : 'À confirmer'}</span>
+              <span className="tabular text-[17px] font-extrabold">{o.total > 0 ? amount(o.total, o.currency) : 'À confirmer'}</span>
             </Row>
             {o.payment && <Row label="Paiement choisi">{PAYMENT[o.payment] ?? o.payment}</Row>}
             <Row label="Encaissement">{o.paid_at ? `${o.paid_via ? `${PAYMENT[o.paid_via]} · ` : ''}pointé le ${dateTime(o.paid_at)}` : 'Non pointé'}</Row>
@@ -832,7 +881,7 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
                           )}
                           {paying ? (
                             <div>
-                              <p className="mb-2.5 px-1 text-[13.5px] font-semibold text-fg-dim">Paiement de {euro(o.total)} reçu par…</p>
+                              <p className="mb-2.5 px-1 text-[13.5px] font-semibold text-fg-dim">Paiement de {amount(o.total, o.currency)} reçu par…</p>
                               <div className="grid grid-cols-2 gap-2.5">
                                 {methods.map((m) => (
                                   <button key={m.id} type="button" disabled={busy !== null} onClick={() => run('paid', { paid: true, via: m.id }, `Paiement reçu par ${m.label}`)} className="press min-h-[54px] rounded-[18px] border border-line-strong bg-white/[0.06] px-3 text-[14.5px] font-bold disabled:opacity-50">
@@ -867,11 +916,11 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
                 {o.status === 'attente' && !(o.total > 0) && (
                   <p className="rounded-2xl bg-star-wash px-4 py-3 text-[13.5px] font-semibold leading-5 text-star">Le prix de cette commande reste à confirmer : aucun paiement ne peut encore être reçu.</p>
                 )}
-                {o.status === 'attente' && o.total > 0 && !paying && <PrimaryButton label="Accuser réception" trailing={euro(o.total)} disabled={busy !== null} onClick={() => setPaying(true)} />}
+                {o.status === 'attente' && o.total > 0 && !paying && <PrimaryButton label="Accuser réception" trailing={amount(o.total, o.currency)} disabled={busy !== null} onClick={() => setPaying(true)} />}
                 {o.status === 'attente' && o.total > 0 && paying && (
                   <div>
                     <p className="mb-2.5 px-1 text-[13.5px] font-semibold text-fg-dim">
-                      Accusé de réception : paiement de {euro(o.total)} vérifié, reçu par…
+                      Accusé de réception : paiement de {amount(o.total, o.currency)} vérifié, reçu par…
                       {o.unpriced > 0 && <span className="block font-medium text-star">{plural(o.unpriced, 'ligne sans prix n’est pas comprise', 'lignes sans prix ne sont pas comprises')} dans ce montant.</span>}
                     </p>
                     <div className="grid grid-cols-2 gap-2.5">
@@ -975,7 +1024,7 @@ function Provenance() {
           body={
             scope === 'examples' && !canEdit
               ? 'En mode visite, seules des commandes d’exemple peuvent s’afficher, et il n’y en a pas. Connectez-vous pour voir les commandes reçues.'
-              : 'L’application d’achat n’envoie pas encore ses commandes ici : elle les garde sur le téléphone du client. Dès qu’elle sera reliée, elles arriveront dans cet espace.'
+              : 'Aucune commande pour l’instant. Les commandes passées dans l’application reliée à cette tour arrivent ici ; l’application relit leur statut toutes les minutes.'
           }
           cta={isOwner ? 'Afficher des commandes d’exemple' : undefined}
           onPress={isOwner && !busy ? () => run(seedExamples, 'Commandes d’exemple ajoutées') : undefined}
@@ -1028,21 +1077,22 @@ function Frame({ title, accent, subtitle, right, children }: { title: string; ac
   );
 }
 
-function Refresh() {
-  const { reload, refreshing } = useOrders();
-  return <GhostButton compact label="Actualiser" loading={refreshing} onClick={reload} className="shrink-0" />;
-}
 
 // ───────────── Page « Commandes »
 
-export function OrdersList() {
+export function OrdersList({ programmes = false }: { programmes?: boolean }) {
   const { loadedAt } = useOrders();
-  const { list } = useScope();
+  const { space } = useSpace();
+  const pros = space === 'b2b';
+  const scoped = useScope();
+  // Pros : les demandes d'un côté, les programmes de l'autre (mêmes étapes de suivi).
+  const list = pros ? scoped.list.filter((o) => (o.kind === 'programme') === programmes) : scoped.list;
+  const [params] = useSearchParams();
   const [status, setStatus] = useState<OrderStatus | 'toutes'>('toutes');
-  const [type, setType] = useState<'tous' | 'particulier' | 'pro'>('tous');
+  const type = 'tous' as 'tous' | 'particulier' | 'pro';
   const [country, setCountry] = useState('');
   const [query, setQuery] = useState('');
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(params.get('commande'));
 
   // Pays présents dans les commandes, du plus commandé au moins commandé.
   const countries = useMemo(() => {
@@ -1067,30 +1117,19 @@ export function OrdersList() {
 
   return (
     <Frame
-      title="Commandes"
+      title={pros ? (programmes ? 'Programmes' : 'Demandes') : 'Commandes'}
       subtitle={time ? `Relues toutes les 30 secondes · dernière lecture à ${String(time.getHours()).padStart(2, '0')}h${String(time.getMinutes()).padStart(2, '0')}` : 'Lecture des commandes…'}
       right={<Refresh />}
     >
       <div className="mx-5 mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="À traiter" value={count(waiting)} tone={waiting > 0 ? 'star' : undefined} detail="Paiement attendu, ou professionnel à contacter." />
         <Kpi label="En cours" value={count(running)} detail="Confirmées, en préparation ou expédiées." />
-        <Kpi label="Montant commandé" value={money(s.ordered)} detail="Hors commandes annulées." />
+        <Kpi label="Montant commandé" value={money(s.ordered)} detail={`Hors commandes annulées.${otherCurrencyNote(s.other)}`} />
         <Kpi label="Encaissé" value={money(s.paid)} tone="leaf" detail={s.due > 0 ? `Reste ${money(s.due)} à encaisser.` : 'Rien à encaisser.'} />
       </div>
 
       <div className="px-5 pt-5">
-        <Segmented
-          label="Type de client"
-          full
-          value={type}
-          onChange={setType}
-          options={[
-            { value: 'tous', label: 'Tous' },
-            { value: 'particulier', label: 'Particuliers' },
-            { value: 'pro', label: 'Professionnels' },
-          ]}
-        />
-        <div className="mt-3.5 flex flex-col gap-3 sm:flex-row">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <label className="flex h-12 min-w-0 shrink-0 items-center sm:flex-1 gap-2 rounded-full border border-line bg-surface px-4 transition-colors focus-within:border-leaf">
             <span className="sr-only">Rechercher une commande</span>
             <input
@@ -1149,6 +1188,11 @@ export function OrdersList() {
       <OrderSheet order={opened} onClose={() => setOpenId(null)} />
     </Frame>
   );
+}
+
+/** Espace Pros › Programmes : quantités étalées dans le temps, suivies comme les demandes. */
+export function OrdersProgrammes() {
+  return <OrdersList programmes />;
 }
 
 // ───────────── Page « Statuts » : les commandes en cours, jusqu'à la réception
@@ -1271,7 +1315,8 @@ export function OrdersStatus() {
   const { list } = useScope();
   const { canEdit } = useAuth();
   const toast = useToast();
-  const [type, setType] = useState<Order['type']>('particulier');
+  // L'espace décide : Particuliers = commandes, Pros = demandes et programmes.
+  const type: Order['type'] = useSpace().space === 'b2b' ? 'pro' : 'particulier';
   const [busyId, setBusyId] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -1309,19 +1354,9 @@ export function OrdersStatus() {
   };
 
   return (
-    <Frame title="Statuts" subtitle={`${plural(openCount('particulier') + openCount('pro'), 'commande en cours', 'commandes en cours')}, jusqu’à la réception. Une commande reçue quitte cette page.`}>
+    <Frame title="Statuts" subtitle={type === 'pro' ? `${plural(openCount('pro'), 'demande en cours', 'demandes en cours')}, jusqu’à la livraison. Une demande livrée quitte cette page.` : `${plural(openCount('particulier'), 'commande en cours', 'commandes en cours')}, jusqu’à la réception. Une commande reçue quitte cette page.`}>
       <div className="px-5 pt-4 lg:max-w-[560px]">
-        <Segmented
-          label="Type de client"
-          full
-          value={type}
-          onChange={setType}
-          options={[
-            { value: 'particulier', label: `Particuliers · ${openCount('particulier')}` },
-            { value: 'pro', label: `Grossistes, importateurs · ${openCount('pro')}` },
-          ]}
-        />
-        <p className="px-1 pt-2.5 text-[12.5px] leading-[18px] text-fg-faint">
+        <p className="px-1 text-[12.5px] leading-[18px] text-fg-faint">
           {type === 'pro'
             ? 'Professionnels : rien n’est payé dans l’application. Le client envoie son intérêt ; vous le contactez, puis vous faites avancer sa demande jusqu’au contrat et à la livraison.'
             : 'Particuliers : le paiement est obligatoire. La commande est confirmée quand vous accusez réception du paiement.'}
@@ -1382,8 +1417,9 @@ type Client = { key: string; name: string; latest: Order; orders: Order[]; order
 
 export function OrdersClients() {
   const { list } = useScope();
+  const [params] = useSearchParams();
   const [query, setQuery] = useState('');
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(params.get('client'));
   const [openOrder, setOpenOrder] = useState<string | null>(null);
 
   const clients = useMemo(() => {
@@ -1394,8 +1430,8 @@ export function OrdersClients() {
       c.orders.push(o);
       if (o.created_at > c.latest.created_at) c.latest = o;
       if (counted(o)) {
-        c.ordered += o.total;
-        if (o.paid_at) c.paid += o.total;
+        c.ordered += euroTotal(o);
+        if (o.paid_at) c.paid += euroTotal(o);
       }
       map.set(key, c);
     }
@@ -1406,9 +1442,10 @@ export function OrdersClients() {
   const shown = needle ? clients.filter((c) => normalize(`${c.name} ${c.latest.customer.name} ${c.latest.customer.email} ${c.latest.address} ${c.latest.country}`).includes(needle)) : clients;
   const opened = clients.find((c) => c.key === openKey) ?? null;
   const pros = clients.filter((c) => c.latest.type === 'pro').length;
+  const proSpace = useSpace().space === 'b2b';
 
   return (
-    <Frame title="Clients" subtitle={`${plural(clients.length, 'client a commandé', 'clients ont commandé')}, dont ${plural(pros, 'professionnel', 'professionnels')}.`}>
+    <Frame title={proSpace ? 'Acheteurs' : 'Clients'} subtitle={proSpace ? `${plural(clients.length, 'acheteur a fait une demande', 'acheteurs ont fait une demande')}.` : `${plural(clients.length, 'client a commandé', 'clients ont commandé')}.`}>
       <div className="px-5 pt-4">
         <label className="flex h-12 items-center gap-2 rounded-full border border-line bg-surface px-4 transition-colors focus-within:border-leaf">
           <span className="sr-only">Rechercher un client</span>
@@ -1468,6 +1505,7 @@ export function OrdersClients() {
                 <dd className="poster-voice tabular mt-1 text-[24px] leading-7 text-leaf">{money(opened.paid)}</dd>
               </div>
             </dl>
+            <ClientCart accountId={opened.key} />
             <h3 className="mt-5 font-display text-[18px] font-semibold">Ses commandes</h3>
             <ul className="mt-2.5 flex flex-col gap-2.5">
               {opened.orders.map((o) => (
@@ -1521,7 +1559,7 @@ export function OrdersStats() {
     const s = sums(scoped);
     const retail = s.live.filter((o) => o.type === 'particulier');
     const pro = s.live.filter((o) => o.type === 'pro');
-    const total = (rows: Order[]) => rows.reduce((sum, o) => sum + o.total, 0);
+    const total = (rows: Order[]) => rows.reduce((sum, o) => sum + euroTotal(o), 0);
 
     // Montant par jour, du plus ancien au plus récent.
     const start = new Date();
@@ -1539,7 +1577,7 @@ export function OrdersStats() {
     for (const o of s.live) {
       for (const l of o.lines) {
         const p = products.get(l.name) ?? { name: l.name, amount: 0, orders: 0 };
-        p.amount += l.total ?? 0;
+        p.amount += isEuro(o) ? (l.total ?? 0) : 0;
         p.orders += 1;
         products.set(l.name, p);
       }
@@ -1551,7 +1589,7 @@ export function OrdersStats() {
       scoped,
       ...s,
       clients: new Set(s.live.map(customerKey)).size,
-      basket: retail.length > 0 ? total(retail) / retail.length : 0,
+      basket: retail.some(isEuro) ? total(retail) / retail.filter(isEuro).length : 0,
       retail: { n: retail.length, amount: total(retail) },
       pro: { n: pro.length, amount: total(pro) },
       byDay,
@@ -1584,7 +1622,7 @@ export function OrdersStats() {
 
       <div className="mx-5 mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
         <Kpi label="Commandes" value={count(data.live.length)} detail={`${plural(data.clients, 'client', 'clients')} différents.`} />
-        <Kpi label="Montant commandé" value={money(data.ordered)} detail={data.unpriced > 0 ? `${plural(data.unpriced, 'demande a', 'demandes ont')} des prix à confirmer, non comptés.` : 'Lignes chiffrées uniquement.'} />
+        <Kpi label="Montant commandé" value={money(data.ordered)} detail={`${data.unpriced > 0 ? `${plural(data.unpriced, 'demande a', 'demandes ont')} des prix à confirmer, non comptés.` : 'Lignes chiffrées uniquement.'}${otherCurrencyNote(data.other)}`} />
         <Kpi label="Encaissé" value={money(data.paid)} tone="leaf" detail="Pointé à la main par l’équipe." />
         <Kpi label="À encaisser" value={money(data.due)} tone={data.due > 0 ? 'star' : undefined} detail="Commandé, pas encore pointé." />
         <Kpi label="Panier moyen" value={data.retail.n > 0 ? money(data.basket) : '—'} detail="Commandes des particuliers." />
@@ -1614,9 +1652,15 @@ export function OrdersStats() {
             </div>
           </Panel>
 
-          <Panel title="Particuliers et professionnels">
-            <Bar label={`Particuliers · ${plural(data.retail.n, 'commande', 'commandes')}`} value={money(data.retail.amount)} share={data.ordered > 0 ? data.retail.amount / data.ordered : 0} />
-            <Bar label={`Professionnels · ${plural(data.pro.n, 'demande', 'demandes')}`} value={money(data.pro.amount)} share={data.ordered > 0 ? data.pro.amount / data.ordered : 0} tone="bg-star" />
+          <Panel title={data.pro.n > 0 ? 'Demandes et programmes' : 'Commandes'}>
+            {data.pro.n > 0 ? (
+              <>
+                <Bar label={`Demandes · ${plural(data.scoped.filter((o) => o.kind !== 'programme').length, 'demande', 'demandes')}`} value={count(data.scoped.filter((o) => o.kind !== 'programme').length)} share={data.scoped.length > 0 ? data.scoped.filter((o) => o.kind !== 'programme').length / data.scoped.length : 0} tone="bg-star" />
+                <Bar label={`Programmes · ${plural(data.scoped.filter((o) => o.kind === 'programme').length, 'programme', 'programmes')}`} value={count(data.scoped.filter((o) => o.kind === 'programme').length)} share={data.scoped.length > 0 ? data.scoped.filter((o) => o.kind === 'programme').length / data.scoped.length : 0} tone="bg-star" />
+              </>
+            ) : (
+              <Bar label={`Particuliers · ${plural(data.retail.n, 'commande', 'commandes')}`} value={money(data.retail.amount)} share={data.ordered > 0 ? 1 : 0} />
+            )}
           </Panel>
         </div>
 
@@ -1655,7 +1699,7 @@ export function OrdersStats() {
 
 // ───────────── Page « Livraison » : le GP et nos livreurs
 
-const EMPTY: Logistics = { gp: { name: '', whatsapp: '' }, gpDelivery: 'aeroport', couriers: [] };
+const EMPTY: Logistics = { gp: { name: '', whatsapp: '' }, gpDelivery: 'aeroport', gpCountries: [], couriers: [] };
 
 export function OrdersDelivery() {
   const { logistics, saveLogistics, loading, error, reload } = useOrders();
@@ -1665,7 +1709,7 @@ export function OrdersDelivery() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
-  const saved = JSON.stringify(logistics ?? EMPTY);
+  const saved = JSON.stringify({ ...EMPTY, ...(logistics ?? {}) });
   useEffect(() => {
     setForm(JSON.parse(saved));
   }, [saved]);
@@ -1742,6 +1786,16 @@ export function OrdersDelivery() {
                   { value: 'domicile', label: 'Porte à porte' },
                 ]}
               />
+              <p className="mb-[7px] mt-4 text-[13px] font-semibold text-fg-dim">Pays desservis par le GP</p>
+              <CountryChips
+                value={form.gpCountries}
+                onChange={(next) => isOwner && setForm((f) => ({ ...f, gpCountries: next }))}
+                label="Pays desservis par le GP"
+                placeholder="Ajouter un pays : France, Belgique…"
+                exclude={['SN']}
+                disabled={!isOwner}
+              />
+              {errors.gpCountries && <p className="mt-2 text-[13px] text-danger">{errors.gpCountries}</p>}
             </Group>
             <Foot>
               Un seul GP pour le moment.{' '}

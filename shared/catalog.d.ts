@@ -3,6 +3,10 @@ export type Incoterm = 'EXW' | 'FOB';
 export type PriceUnit = 'kg' | 'conteneur';
 
 export type RetailOffer = {
+  /** Particuliers : 'emballe' (vendu par ses emballages) ou 'frais'. Absent : 'frais'. */
+  kind?: 'emballe' | 'frais';
+  /** `false` : « Pour les particuliers » désactivé, valeurs gardées. */
+  active?: boolean;
   price: number | null;
   unit: 'kg' | 'unit';
   unitLabel: string;
@@ -51,9 +55,12 @@ export type PackAudience = 'tous' | 'particuliers' | 'pros';
  * Emballage. `qty` + `unit` : contenu d'UN emballage. `step`, `min`, `max` : nombre d'emballages
  * qu'un client commande (entiers) — `min` vide : un palier ; `max` vide : aucun maximum fixé.
  */
-export type Packaging = { id: string; label: string; qty: number | null; unit: PackUnit; price: number | null; step: number; min: number | null; max: number | null; audience: PackAudience; available: boolean; photo_url?: string | null; description?: string; countryRules?: PackCountryRule[] };
+export type PackPrices = { XOF: number | null; EUR: number | null; USD: number | null };
+export type Packaging = { id: string; label: string; qty: number | null; unit: PackUnit; price: number | null; prices?: PackPrices; preview_url?: string | null; countries?: { mode: 'zone' | 'pays' | 'sauf'; list: string[] }; is_default?: boolean; currency?: PackCurrency; step: number; min: number | null; max: number | null; audience: PackAudience; available: boolean; photo_url?: string | null; description?: string; countryRules?: PackCountryRule[] };
 /** Réglage d'un emballage pour un groupe de pays. `price: null` : prix d'origine. `own` (saisie) : « prix propre » choisi. */
-export type PackCountryRule = { countries: string[]; available: boolean; price: number | null; own?: boolean; photo_url?: string | null; ownPhoto?: boolean };
+export type PackCurrency = 'EUR' | 'XOF';
+export const PACK_CURRENCIES: PackCurrency[];
+export type PackCountryRule = { countries: string[]; available: boolean; price: number | null; currency?: PackCurrency; own?: boolean; photo_url?: string | null; ownPhoto?: boolean };
 export type PackShape = { qty?: number | null; unit?: PackUnit; price?: number | null; step?: number | null; min?: number | null; max?: number | null };
 export function packTotal(p: PackShape, count: number): string;
 export function packUnitPrice(p: PackShape): string;
@@ -99,6 +106,10 @@ export type ProductRow = {
   packagings?: Packaging[];
   /** Pays où le produit s'affiche. Enregistré avec la fiche, rangé dans la table `zones`. */
   zone: Zone;
+  /** Espace du produit : Particuliers ('b2c') ou Grossistes et importateurs ('b2b'). */
+  space?: 'b2c' | 'b2b';
+  /** Fiche pro (espace 'b2b' seulement). */
+  pro?: import('./pro.js').ProSheet | null;
 };
 
 /** Saisie d'une fiche : les nombres peuvent être absents (`null`) ou illisibles (`NaN`). */

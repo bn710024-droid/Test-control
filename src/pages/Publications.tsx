@@ -21,6 +21,9 @@ type VideoData = { title: string; description: string; audience: Audience; publi
 type AnnonceData = {
   product_id: string;
   accent: string;
+  /** Surtitre et titre (annonce au modèle) ; vides, l'application les déduit du produit. */
+  kicker?: string;
+  title?: string;
   body: string;
   demo?: boolean;
   starts_at?: string | null;
@@ -49,15 +52,15 @@ const VIEW_TEXT: Record<View, { add: string; emptyTitle: string; emptyBody: stri
   videos: {
     add: 'Publier une vidéo',
     emptyTitle: 'Aucune vidéo',
-    emptyBody: 'Publiez la première vidéo de l’équipe. Tant qu’il n’y en a pas, l’application montre ses vidéos de démonstration.',
-    where: 'Espace Publications de l’application · Favoris › Publications › Vidéos',
+    emptyBody: 'Publiez la première vidéo de l’équipe. Tant qu’il n’y en a pas, l’espace Découvrir de l’application reste sans vidéo.',
+    where: 'Espace Découvrir de l’application · Favoris › Découvrir',
     intro: 'Les vidéos de l’équipe. Le client les regarde, les aime et les commente : rien n’y mène à un produit. Les statistiques de chaque vidéo sont sur sa carte et dans sa fiche.',
   },
   photos: {
     add: 'Publier des photos',
     emptyTitle: 'Aucune publication photo',
     emptyBody: 'Créez la première : une à dix de vos photos, que le client fait défiler de côté, avec une description dessous.',
-    where: 'Espace Publications de l’application · Favoris › Publications › Photos',
+    where: 'Espace Découvrir de l’application · Favoris › Découvrir › Photos',
     intro: 'Vos propres photos, que le client fait défiler de côté, avec une description dessous. Il peut les aimer et les commenter : rien n’y mène à un produit. Les statistiques de chaque publication sont sur sa carte et dans sa fiche.',
   },
   annonces: {
@@ -531,12 +534,12 @@ export default function Publications() {
 
       {!loading && !error && (
         <div className="mx-5 mt-5">
-          <Notice tone={view === 'annonces' ? 'neutral' : 'star'} title={view === 'annonces' ? 'Annonces dans l’application' : 'Dans l’application : appliquez le correctif'}>
+          <Notice tone={view === 'annonces' ? 'neutral' : 'star'} title={view === 'annonces' ? 'Annonces dans l’application' : 'Dans l’application'}>
             {view === 'annonces'
-              ? 'Seules les annonces en cours sont envoyées, avec leur date de fin ; sans annonce en cours, pas de bandeau. Les annonces faites de votre image demandent le correctif ci-dessous : sans lui, l’application ne dessine que le modèle.'
+              ? 'Seules les annonces en cours sont envoyées, avec leur date de fin ; sans annonce en cours, pas de bandeau. L’application les relit toutes les minutes. Une annonce faite de votre image s’affiche en fond du bandeau : avec un bouton vers son produit, touchable, ou image seule, sans lien.'
               : view === 'photos'
-                ? 'Le correctif ajoute ces publications à l’application (Favoris › Publications › Photos) et y fait remonter les vues, les J’aime et les commentaires. Tant qu’il n’est pas appliqué à votre version de l’application, elle ne les affiche pas et aucune statistique n’arrive.'
-                : 'Avec le correctif, l’application lit ces vidéos (Favoris › Publications › Vidéos) et fait remonter ici les vues, les J’aime et les commentaires. Sans lui, elle montre ses vidéos de démonstration et aucune statistique n’arrive.'}
+                ? 'L’application n’affiche pas encore les publications photo : l’écran reste à ajouter. Elles sont enregistrées et publiées ici, prêtes pour cette mise à jour.'
+                : 'L’application reliée lit ces vidéos (Favoris › Découvrir) et envoie ici les vues, les J’aime et les commentaires, sans le nom du compte pour l’instant.'}
             <span className="mt-2.5 flex items-center gap-2 rounded-2xl border border-line bg-black/25 p-1.5 pl-3.5">
               <code className="min-w-0 flex-1 truncate text-[12.5px] text-fg">{address}</code>
               <button type="button" onClick={() => copy(address)} className="press grid h-11 shrink-0 place-items-center rounded-full bg-surface-strong px-4 text-[13px] font-bold text-fg">
@@ -545,9 +548,6 @@ export default function Publications() {
             </span>
             {(
               <span className="mt-2.5 flex flex-wrap gap-2.5">
-                <a href="/branchement/app-tropicaura.patch" download className="press flex min-h-11 items-center rounded-full bg-leaf px-4 text-[13.5px] font-extrabold text-on-leaf">
-                  Télécharger le correctif
-                </a>
                 <a href="/branchement/LISEZ-MOI.txt" target="_blank" rel="noreferrer noopener" className="press flex min-h-11 items-center rounded-full border border-line-strong px-4 text-[13.5px] font-bold text-fg">
                   Lire les instructions
                 </a>
@@ -727,8 +727,8 @@ function VideoSheet({ target, onClose, onSaved }: { target: VideoPub | 'new' | n
       )}
       {src && canEdit && <GhostButton compact className="mt-3" label={reading ? 'Lecture…' : 'Remplacer le fichier'} disabled={reading || !!step} onClick={() => fileInput.current?.click()} />}
 
-      <Field label="Titre" value={form.title} maxLength={80} placeholder="Mangue du Sénégal : la campagne arrive" onValue={(v) => setForm((f) => ({ ...f, title: v }))} error={errors.title || undefined} />
-      <TextArea label="Description" optional value={form.description} maxLength={220} className="!min-h-[92px]" onValue={(v) => setForm((f) => ({ ...f, description: v }))} error={errors.description || undefined} hint={`${form.description.trim().length} / 220 caractères`} />
+      <Field label="Titre" value={form.title} maxLength={80} placeholder="Mangue du Sénégal : la campagne arrive" onValue={(v) => setForm((f) => ({ ...f, title: v }))} error={errors.title || undefined} hint="Sert à reconnaître la vidéo ici et à la lecture d’écran ; l’application ne l’affiche pas sur la vidéo." />
+      <TextArea label="Description" optional value={form.description} maxLength={220} className="!min-h-[92px]" onValue={(v) => setForm((f) => ({ ...f, description: v }))} error={errors.description || undefined} hint={`${form.description.trim().length} / 220 caractères · gardée ici, pas encore affichée par l’application.`} />
       <p className="mb-[7px] mt-4 text-[13px] font-semibold text-fg-dim">Visible par</p>
       <Segmented
         label="Public de la vidéo"
@@ -778,7 +778,7 @@ function AnnonceSheet({ target, onClose, onSaved, products, byId, others }: {
   const now = useNow(15_000);
   const isNew = target === 'new';
   const current = target && target !== 'new' ? target : null;
-  const [form, setForm] = useState({ mode: 'modele' as 'modele' | 'image', link: 'button' as LinkMode, button_label: '', product_id: '', accent: '', body: '', published: true, duration: '7' as DurationChoice, until: '' });
+  const [form, setForm] = useState({ mode: 'modele' as 'modele' | 'image', link: 'button' as LinkMode, button_label: '', product_id: '', accent: '', kicker: '', title: '', body: '', published: true, duration: '7' as DurationChoice, until: '' });
   const [shot, setShot] = useState<Shot | null>(null);
   const [reading, setReading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -794,8 +794,8 @@ function AnnonceSheet({ target, onClose, onSaved, products, byId, others }: {
     setShot(current?.data.image_url ? { key: 'en-ligne', url: current.data.image_url, width: 0, height: 0 } : null);
     setForm(
       current
-        ? { mode: current.data.image_url ? 'image' : 'modele', link: current.data.image_url ? (current.data.link ?? 'button') : 'button', button_label: current.data.button_label ?? '', product_id: current.data.product_id, accent: current.data.accent, body: current.data.body, published: current.published && !ended, duration: ended ? '7' : 'keep', until: toLocalInput(Date.now() + 7 * DAY) }
-        : { mode: 'modele', link: 'button', button_label: '', product_id: '', accent: '', body: '', published: true, duration: '7', until: toLocalInput(Date.now() + 7 * DAY) },
+        ? { mode: current.data.image_url ? 'image' : 'modele', link: current.data.image_url ? (current.data.link ?? 'button') : 'button', button_label: current.data.button_label ?? '', product_id: current.data.product_id, accent: current.data.accent, kicker: current.data.kicker ?? '', title: current.data.title ?? '', body: current.data.body, published: current.published && !ended, duration: ended ? '7' : 'keep', until: toLocalInput(Date.now() + 7 * DAY) }
+        : { mode: 'modele', link: 'button', button_label: '', product_id: '', accent: '', kicker: '', title: '', body: '', published: true, duration: '7', until: toLocalInput(Date.now() + 7 * DAY) },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
@@ -855,6 +855,8 @@ function AnnonceSheet({ target, onClose, onSaved, products, byId, others }: {
       const data = {
         product_id: hasProduct ? form.product_id : '',
         accent: withImage ? '' : form.accent,
+        kicker: withImage ? '' : form.kicker,
+        title: withImage ? '' : form.title,
         body: form.body,
         image_url,
         link: withImage ? form.link : ('button' as LinkMode),
@@ -978,7 +980,7 @@ function AnnonceSheet({ target, onClose, onSaved, products, byId, others }: {
             )}
             {shot && canEdit && <GhostButton compact className="mt-3" label={reading ? 'Lecture…' : 'Remplacer l’image'} disabled={reading || busy} onClick={() => fileInput.current?.click()} />}
             {shot && <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint">Le bandeau est horizontal : les bords d’une image trop haute sont rognés. Gardez l’essentiel au centre.</p>}
-            <TextArea label="Texte sur l’image" optional value={form.body} maxLength={120} className="!min-h-[76px]" placeholder="La campagne de mangue commence en mai." onValue={(v) => setForm((f) => ({ ...f, body: v }))} error={errors.body || undefined} hint={`${form.body.trim().length} / 120 · en bas de l’image. Laissez vide si le texte est déjà dans votre image.`} />
+            <TextArea label="Texte sur l’image" optional value={form.body} maxLength={120} className="!min-h-[76px]" placeholder="La campagne de mangue commence en mai." onValue={(v) => setForm((f) => ({ ...f, body: v }))} error={errors.body || undefined} hint={form.link === 'button' ? `${form.body.trim().length} / 120 · en bas de l’image. Laissez vide si le texte est déjà dans votre image.` : `${form.body.trim().length} / 120 · non affiché par l’application avec « ${form.link === 'tap' ? 'Toucher l’image' : 'Aucun'} » : l’image est montrée seule. Mettez le texte dans l’image, ou choisissez un bouton.`} />
             <p className="mb-2 mt-4 text-[13px] font-semibold text-fg-dim">Quand le client touche l’annonce</p>
             <LinkPicker
               link={form.link}
@@ -1005,6 +1007,8 @@ function AnnonceSheet({ target, onClose, onSaved, products, byId, others }: {
                 {errors.product_id}
               </p>
             )}
+            <Field label="Surtitre" optional value={form.kicker} maxLength={40} placeholder="Campagne en cours" onValue={(v) => setForm((f) => ({ ...f, kicker: v }))} error={errors.kicker || undefined} hint="Au-dessus du titre. Vide : l’application écrit « Campagne en cours » ou « Campagne à venir · dès … »." />
+            <Field label="Titre" optional value={form.title} maxLength={40} placeholder="Nom du produit" onValue={(v) => setForm((f) => ({ ...f, title: v }))} error={errors.title || undefined} hint="Vide : le nom du produit mis en avant." />
             <Field label="Accroche" optional value={form.accent} maxLength={40} placeholder="du Sénégal" onValue={(v) => setForm((f) => ({ ...f, accent: v }))} error={errors.accent || undefined} hint="En italique, sous le nom du produit." />
             <TextArea label="Texte" value={form.body} maxLength={120} className="!min-h-[92px]" placeholder="Kent et Keitt, récoltées de mai à octobre." onValue={(v) => setForm((f) => ({ ...f, body: v }))} error={errors.body || undefined} hint={`${form.body.trim().length} / 120 · deux lignes dans le bandeau`} />
           </>
