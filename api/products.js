@@ -263,7 +263,7 @@ export default async function handler(req, res) {
       const before = (await loadPacks()).get(current.id) ?? [];
       let items = before;
       // La base range les clés dans son ordre à elle : on compare champ par champ.
-      const flat = (list) => JSON.stringify(list.map((k) => [k.id, k.label, k.qty, k.unit, k.price, k.step ?? 1, k.min ?? null, k.max ?? null, k.audience, k.available, k.photo_url ?? null, k.description ?? '', (k.countryRules ?? []).map((g) => [g.countries, g.available !== false, g.price ?? null, g.photo_url ?? null])]));
+      const flat = (list) => JSON.stringify(list.map((k) => [k.id, k.label, k.qty, k.unit, k.price, k.step ?? 1, k.min ?? null, k.max ?? null, k.audience, k.available, k.photo_url ?? null, k.description ?? '', (k.countryRules ?? []).map((g) => [g.countries, g.available !== false, g.price ?? null, g.photo_url ?? null]), k.prices ? [k.prices.XOF ?? null, k.prices.EUR ?? null, k.prices.USD ?? null] : null, k.countries ? [k.countries.mode, k.countries.list] : null, k.is_default === true, k.preview_url ?? null]));
       if (packs && flat(packs.value) !== flat(before)) {
         items = await savePacks(current.id, packs.value);
         // Photos d'emballage retirées ou remplacées : leurs fichiers ne servent plus.
