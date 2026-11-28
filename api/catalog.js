@@ -1,6 +1,7 @@
 import supabase from './db-client.js';
-import { loadSeals, stateOf, AUDIENCE_KEY, proHiddenOf } from './_seal.js';
-import { buildDocument, DEFAULT_RULES, zoneOf, isCountryCode } from '../shared/catalog.js';
+import { stateOf } from './_seal.js';
+import { loadCatalogSource } from './_catalog-data.js';
+import { buildDocument, DEFAULT_RULES, isCountryCode } from '../shared/catalog.js';
 import { requestMessageOf } from '../shared/requests.js';
 import { annonceState } from '../shared/orders.js';
 import { toAppDocument } from '../shared/catalog-v2.js';
@@ -23,39 +24,18 @@ export default async function handler(req, res) {
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
   try {
-    const [products, categories, settings, seals] = await Promise.all([
-      supabase.from('products').select('*').eq('archived', false).order('sort_order', { ascending: true }),
-      supabase.from('categories').select('*').order('sort_order', { ascending: true }),
-      supabase.from('settings').select('*').in('key', ['rules', AUDIENCE_KEY, 'filters', 'missing', 'gp', 'payments', 'transport']),
-      loadSeals(),
-    ]);
-    const annonces = await supabase.from('publications').select('*').eq('kind', 'annonce').eq('published', true).order('sort_order', { ascending: true });
-    if (annonces.error) throw annonces.error;
-    const packRows = await supabase.from('packagings').select('*');
-    if (packRows.error) throw packRows.error;
-    const packagings = Object.fromEntries(
-      packRows.data.filter((r) => stateOf('packagings', r, seals) === 'ok').map((r) => [r.id, Array.isArray(r.items) ? r.items : []]),
-    );
-    // Pays où chaque produit s'affiche (table `zones`). Sans ligne : le monde entier.
-    const zoneRows = await supabase.from('zones').select('*');
-    if (zoneRows.error) throw zoneRows.error;
-    const zones = Object.fromEntries(zoneRows.data.filter((r) => stateOf('zones', r, seals) === 'ok').map((r) => [r.id, zoneOf(r.zone)]));
     // `?pays=SN` : le catalogue tel que le voit un client de ce pays.
     const asked = String(req.query?.pays ?? '').toUpperCase();
     if (asked && !isCountryCode(asked)) return res.status(400).json({ error: 'Pays inconnu : attendu, un code à deux lettres (SN, FR…).' });
-    if (products.error) throw products.error;
-    if (categories.error) throw categories.error;
-    if (settings.error) throw settings.error;
-
-    const okProducts = products.data.filter((p) => stateOf('products', p, seals) === 'ok');
-    const okCategories = categories.data.filter((c) => stateOf('categories', c, seals) === 'ok');
-    const rulesRow = settings.data.find((r) => r.key === 'rules') ?? null;
-    const audienceRow = settings.data.find((r) => r.key === AUDIENCE_KEY) ?? null;
-    const rulesOk = !!rulesRow && stateOf('settings', rulesRow, seals) === 'ok';
+    const [src, annonces] = await Promise.all([
+      loadCatalogSource(['filters', 'missing', 'gp', 'payments', 'transport']),
+      supabase.from('publications').select('*').eq('kind', 'annonce').eq('published', true).order('sort_order', { ascending: true }),
+    ]);
+    if (annonces.error) throw annonces.error;
+    const { seals, okProducts, okCategories, packagings, zones, rulesRow, rulesOk, audienceRow, proHidden } = src;
+    const settings = { data: src.settings };
     const filtersRow = settings.data.find((r) => r.key === 'filters') ?? null;
     const filtersOk = !!filtersRow && stateOf('settings', filtersRow, seals) === 'ok';
-    // Rayons masqués aux grossistes et importateurs : leurs offres professionnelles ne sont pas publiées.
-    const proHidden = proHiddenOf(audienceRow, seals, categories.data.map((c) => c.id));
 
     const stamps = [
       ...okProducts.map((p) => p.updated_at),
@@ -132,7 +112,8 @@ export default async function handler(req, res) {
     // une fois réglé et validé : sans lui, l'application garde son barème.
     const transportRow = settings.data.find((r) => r.key === 'transport') ?? null;
     if (transportRow && stateOf('settings', transportRow, seals) === 'ok') {
-      doc.transport = { currency: 'EUR', zones: transportZonesOf(transportRow.value).map(({ id, label, fee }) => ({ id, label, fee })) };
+      // `currency` : la devise par défaut ; chaque zone dit la sienne (euro ou franc CFA).
+      doc.transport = { currency: 'EUR', zones: transportZonesOf(transportRow.value).map(({ id, label, fee, currency }) => ({ id, label, fee, currency })) };
     }
     // Cache court : une annonce activée, désactivée ou arrivée à son terme se voit en quelques secondes.
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');

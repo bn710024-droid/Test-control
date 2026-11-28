@@ -46,7 +46,7 @@ import {
   TextArea,
 } from '../components/ui';
 import { ApiError, messageOf } from '../lib/api';
-import { ago, euro, parseNum, plural, seasonText, unitTiny } from '../lib/format';
+import { ago, amount, euro, parseNum, plural, seasonText, unitTiny } from '../lib/format';
 import { prepareImage, type Prepared } from '../lib/image';
 import { newOffer, newPack, newPackCountry, newRetailGroup, packInput, toForm, toInput, type Form, type OfferForm, type PackForm } from '../lib/productForm';
 import { Choice, CountryPrices, RuleRow } from '../components/CountryPrices';
@@ -1156,6 +1156,11 @@ function Editor({ product }: { product: Product | null }) {
                         { value: 'pros', label: 'Pros' },
                       ]}
                     />
+                    <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint">
+                      {k.audience === 'pros'
+                        ? 'Les professionnels commandent par offres (avion, bateau) : l’application ne leur montre pas d’emballage. Réservé aux pros, cet emballage n’est donc proposé à personne pour l’instant.'
+                        : 'Dans l’application, les emballages sont proposés aux particuliers ; les professionnels commandent par offres (avion, bateau).'}
+                    </p>
                     <ToggleRow
                       title={`Emballage ${i + 1} proposé`}
                       detail={k.available ? 'Visible sur la fiche du produit.' : 'Masqué : conservé ici, invisible pour les clients.'}
@@ -1184,7 +1189,7 @@ function Editor({ product }: { product: Product | null }) {
                       summary={(g) => {
                         if (!g.available) return 'Non proposé';
                         const own = shown(parseNum(g.price));
-                        const price = g.own ? `Prix propre · ${own !== null ? euro(own) : 'à saisir'}` : `Prix d’origine · ${v.price !== null ? euro(v.price) : 'à confirmer'}`;
+                        const price = g.own ? `Prix propre · ${own !== null ? amount(own, g.currency) : 'à saisir'}` : `Prix d’origine · ${v.price !== null ? euro(v.price) : 'à confirmer'}`;
                         return `${price} · ${g.ownPhoto ? (g.photo ? 'photo propre' : 'photo à ajouter') : 'même photo'}`;
                       }}
                       fields={(g, j, patch) => {
@@ -1210,17 +1215,35 @@ function Editor({ product }: { product: Product | null }) {
                                   ]}
                                 />
                                 {g.own ? (
-                                  <Field
-                                    label="Prix de l’emballage entier dans ces pays"
-                                    inputMode="decimal"
-                                    placeholder="À saisir"
-                                    suffix="€"
-                                    value={g.price}
-                                    onValue={(val) => patch({ price: val })}
-                                    onBlur={() => touch(`packagings.${i}.countryRules.${j}.price`)}
-                                    error={err(`packagings.${i}.countryRules.${j}.price`)}
-                                    hint={ownUnit ? `Pour l’emballage entier, soit ${ownUnit}. Prix d’origine : ${v.price !== null ? euro(v.price) : 'à confirmer'}.` : `Prix d’origine : ${v.price !== null ? euro(v.price) : 'à confirmer'}.`}
-                                  />
+                                  <>
+                                    <p className="mb-[7px] mt-3.5 text-[13px] font-semibold text-fg-dim">Devise de ce prix</p>
+                                    <Choice
+                                      label={`Devise du prix de l’emballage ${i + 1} dans ces pays`}
+                                      value={g.currency}
+                                      onChange={(c) => patch({ currency: c })}
+                                      options={[
+                                        ['EUR', 'Euro (€)'],
+                                        ['XOF', 'Franc CFA'],
+                                      ]}
+                                    />
+                                    <Field
+                                      label="Prix de l’emballage entier dans ces pays"
+                                      inputMode={g.currency === 'XOF' ? 'numeric' : 'decimal'}
+                                      placeholder="À saisir"
+                                      suffix={g.currency === 'XOF' ? 'F CFA' : '€'}
+                                      value={g.price}
+                                      onValue={(val) => patch({ price: val })}
+                                      onBlur={() => touch(`packagings.${i}.countryRules.${j}.price`)}
+                                      error={err(`packagings.${i}.countryRules.${j}.price`)}
+                                      hint={
+                                        g.currency === 'XOF'
+                                          ? `Payé en francs CFA par les clients de ces pays, sans conversion. Prix d’origine : ${v.price !== null ? euro(v.price) : 'à confirmer'}.`
+                                          : ownUnit
+                                            ? `Pour l’emballage entier, soit ${ownUnit}. Prix d’origine : ${v.price !== null ? euro(v.price) : 'à confirmer'}.`
+                                            : `Prix d’origine : ${v.price !== null ? euro(v.price) : 'à confirmer'}.`
+                                      }
+                                    />
+                                  </>
                                 ) : (
                                   <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint" data-prix-pays="origine">
                                     Même prix qu’à l’origine : {v.price !== null ? `${euro(v.price)} l’emballage` : 'à confirmer'}. Il suivra le prix d’origine si vous le changez.

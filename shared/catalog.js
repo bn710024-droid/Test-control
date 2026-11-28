@@ -23,6 +23,14 @@ export const LIMITS = {
   containers: 999,
 };
 
+/**
+ * Devises d'un prix propre à des pays, pour un emballage : l'euro, ou le franc CFA (Afrique de
+ * l'Ouest). Jamais de conversion : le prix saisi est celui que le client paie, dans cette devise.
+ */
+export const PACK_CURRENCIES = ['EUR', 'XOF'];
+/** Plafond d'un prix d'emballage par devise (le franc CFA s'écrit sans centimes, en milliers). */
+const PACK_PRICE_MAX = { EUR: 10000, XOF: 10000000 };
+
 export const DEFAULT_RULES = {
   standard: { minKg: 500, stepKg: 100, maxKg: 100000 },
   avion: { minKg: 500, stepKg: 500, maxKg: 100000 },
@@ -495,6 +503,7 @@ export function packCountryRules(pack) {
       countries: codesOf(g?.countries),
       available: g?.available !== false,
       price: positive(g?.price),
+      currency: g?.currency === 'XOF' && positive(g?.price) !== null ? 'XOF' : 'EUR',
       photo_url: typeof g?.photo_url === 'string' && g.photo_url ? g.photo_url : null,
     }))
     .filter((g) => g.countries.length > 0);
@@ -510,7 +519,7 @@ export function packFor(pack, country) {
   const own = groupOf(packCountryRules(pack), country);
   if (!own) return rest;
   if (!own.available) return null;
-  return { ...rest, ...(own.price !== null ? { price: own.price } : null), ...(own.photo_url ? { photo_url: own.photo_url } : null) };
+  return { ...rest, ...(own.price !== null ? { price: own.price, currency: own.currency } : null), ...(own.photo_url ? { photo_url: own.photo_url } : null) };
 }
 
 // ───────────── Emballages d'un produit (carton, barquette, sachet…)
@@ -727,7 +736,11 @@ export function validatePackagings(input) {
       const available = g?.available !== false;
       // `own` : « prix propre » choisi à l'écran — le prix est alors obligatoire. Sinon : prix d'origine.
       const own = available && (g?.own === true || (g?.own === undefined && !empty(g?.price)));
-      const own_price = own ? money(g?.price, `${base}.price`, errors, 'Prix de l’emballage dans ces pays', LIMITS.retailPrice) : null;
+      const currency = own && g?.currency === 'XOF' ? 'XOF' : 'EUR';
+      const own_price = own ? money(g?.price, `${base}.price`, errors, 'Prix de l’emballage dans ces pays', PACK_PRICE_MAX[currency]) : null;
+      if (own_price !== null && currency === 'XOF' && !Number.isInteger(own_price)) {
+        errors[`${base}.price`] = 'Prix en francs CFA : un nombre entier, sans centimes.';
+      }
       if (own && own_price === null && !errors[`${base}.price`]) {
         errors[`${base}.price`] = 'Indiquez le prix de cet emballage dans ces pays, ou choisissez « Prix d’origine ».';
       }
@@ -737,7 +750,8 @@ export function validatePackagings(input) {
       if (ownPhoto && own_photo === null && !errors[`${base}.photo_url`]) {
         errors[`${base}.photo_url`] = 'Ajoutez la photo de l’emballage pour ces pays, ou choisissez « Même photo ».';
       }
-      return { countries, available, price: own_price, photo_url: own_photo };
+      // La devise n'est rangée que pour un prix propre en francs CFA : l'euro reste implicite.
+      return { countries, available, price: own_price, ...(own_price !== null && currency !== 'EUR' ? { currency } : null), photo_url: own_photo };
     });
 
     // Nombre d'emballages commandés : des emballages entiers.

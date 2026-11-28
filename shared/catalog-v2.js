@@ -28,10 +28,27 @@ export function visibilityOfZone(zone) {
   return { mode: 'monde', countries: [] };
 }
 
-/** « Sachet » → ['sachet', 'sachets'] ; « Box » → ['box', 'box'] ; « Carton de 4 kg » → ['carton', 'cartons']. */
+const pluralWord = (w) => (/[sxz]$/.test(w) ? w : /(au|eu)$/.test(w) ? `${w}x` : `${w}s`);
+
+/**
+ * Nom d'unité d'un emballage, d'après son libellé, sans ce qui suit « de » (son contenu) :
+ * « Sachet » → ['sachet', 'sachets'] ; « Box » → ['box', 'box'] ; « Carton de 4 kg » →
+ * ['carton', 'cartons'] ; « Petit carton » → ['petit carton', 'petits cartons'] ; « Pot en verre
+ * de 200 g » → ['pot en verre', 'pots en verre'] (seul le nom avant « en » prend la marque du pluriel).
+ */
 export function nounOf(label) {
-  const word = String(label ?? '').trim().split(/\s+/)[0]?.toLowerCase() || 'emballage';
-  return [word, /[sxz]$/.test(word) ? word : `${word}s`];
+  const head = String(label ?? '')
+    .trim()
+    .toLowerCase()
+    .split(/\s+(?:de|d['’]|du|des)\s*(?=\S)/)[0]
+    .replace(/\s*\d.*$/, '')
+    .trim();
+  if (!head) return ['emballage', 'emballages'];
+  const words = head.split(/\s+/);
+  const cut = words.findIndex((w, i) => i > 0 && ['en', 'à', 'a', 'pour', 'avec', 'sans'].includes(w));
+  const front = cut < 0 ? words : words.slice(0, cut);
+  const rest = cut < 0 ? [] : words.slice(cut);
+  return [head, [...front.map(pluralWord), ...rest].join(' ')];
 }
 
 /** Contenu d'un emballage en grammes (kg et g) ; `null` pour un contenu en pièces ou absent. */
@@ -61,7 +78,7 @@ function settingOf(rule) {
   const out = { mode: 'pays', countries: rule.countries, available: rule.available !== false };
   if (typeof rule.price === 'number' && rule.price > 0) {
     out.price = rule.price;
-    out.currency = DEFAULT_CURRENCY;
+    out.currency = rule.currency === 'XOF' ? 'XOF' : DEFAULT_CURRENCY;
   }
   if (rule.photo_url) out.photo = { url: rule.photo_url };
   return out;
@@ -86,7 +103,8 @@ export function formatOf(pack, productId) {
     unit: pack.unit === 'piece' ? 'unit' : 'kg',
     // Prix de l'emballage ENTIER ; `null` conservé : « Prix à compléter », jamais remplacé.
     price: typeof pack.price === 'number' && pack.price > 0 ? pack.price : null,
-    currency: DEFAULT_CURRENCY,
+    // Avec `?pays=`, le prix est déjà celui du pays, dans sa devise (franc CFA possible).
+    currency: pack.currency === 'XOF' ? 'XOF' : DEFAULT_CURRENCY,
     noun: nounOf(pack.label),
     // Libellé d'unité neutre (« par cagette de 5 kg ») : l'application ne devine plus l'article
     // (« le cagette ») et le contenu s'affiche en kg au-delà du kilo.
@@ -141,12 +159,20 @@ export function campaignsOf(banners) {
 }
 
 /** Rayons du v1 → `{ id, label, order, image, pro }` (image : photo publiée, ou produit illustrant). */
-export function categoriesOf(list) {
+export function categoriesOf(list, products = []) {
+  // Produit d'illustration : sa photo envoyée depuis la tour, sinon sa photo embarquée (`asset`).
+  const photoOf = (id) => (Array.isArray(products) ? products : []).find((p) => p.id === id)?.photo;
   return (Array.isArray(list) ? list : []).map((c, i) => ({
     id: c.id,
     label: c.label,
     order: i,
-    image: c.illustration?.url ? { url: c.illustration.url } : c.illustration?.product ? { asset: c.illustration.product } : null,
+    image: c.illustration?.url
+      ? { url: c.illustration.url }
+      : c.illustration?.product
+        ? photoOf(c.illustration.product)?.url
+          ? { url: photoOf(c.illustration.product).url, product: c.illustration.product }
+          : { asset: c.illustration.product }
+        : null,
     pro: c.pro !== false,
   }));
 }
@@ -177,7 +203,7 @@ export function toAppDocument(v1, { demoIds = new Set(), gp = [] } = {}) {
     products: (v1.products ?? []).map((p) => productOf(p, demoIds)),
     campaigns: campaignsOf(v1.banners),
     delivery: { gp },
-    categories: categoriesOf(v1.categories),
+    categories: categoriesOf(v1.categories, v1.products),
     filters: filtersOf(v1.filters),
     payments: (v1.payments ?? []).map((p) => ({ ...p, enabled: true })),
     productRequest: v1.productRequest ?? null,

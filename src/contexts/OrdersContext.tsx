@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, api, messageOf } from '../lib/api';
 import { useAuth } from './AuthContext';
+import type { CartStatusId, ContactWay } from '../../shared/carts.js';
 
 export type OrderStatus = 'attente' | 'confirmee' | 'preparation' | 'expediee' | 'livree' | 'annulee';
 
@@ -68,8 +69,55 @@ export type Courier = { id: string; name: string; phone: string };
 export type Logistics = { gp: { name: string; whatsapp: string }; gpDelivery: 'aeroport' | 'domicile'; gpCountries: string[]; couriers: Courier[] };
 export type OrderPatch = { status?: OrderStatus; paid?: boolean; via?: PayMethod; courier_id?: string | null; airport?: string; delivery?: 'aeroport' | 'domicile'; gp_notified?: boolean; notified_via?: 'whatsapp' | 'email'; stage?: string };
 
+/** Ligne d'un panier en cours, chiffrée par la tour d'après le catalogue publié. */
+export type CartLine = {
+  line_id: string;
+  product_id: string;
+  name: string;
+  format_label: string | null;
+  mode: 'avion' | 'bateau' | null;
+  qty: number;
+  unit: 'kg' | 'unit' | 'conteneur';
+  noun: [string, string] | null;
+  /** `null` : prix à confirmer — la ligne n'entre dans aucun total. */
+  unit_price: number | null;
+  currency: string;
+  total: number | null;
+  /** Faux : la ligne ne correspond plus à rien de commandable pour ce client. */
+  known: boolean;
+  added_at: string;
+  updated_at: string;
+};
+
+/** Panier en cours d'un client de l'application (un par compte). */
+export type Cart = {
+  id: string;
+  account: { name: string; type: 'particulier' | 'pro'; activity: string | null; company: string; phone: string; email: string; whatsapp: string; country: string };
+  country: string;
+  incoterm: 'EXW' | 'FOB' | null;
+  lines: CartLine[];
+  /** Un total par devise, jamais additionnés entre eux. */
+  totals: { currency: string; amount: number }[];
+  unpriced: number;
+  /** Dernière modification du panier dans l'application. */
+  updated_at: string;
+  changed_at: string;
+  created_at: string;
+  status: CartStatusId;
+  /** Statut « commandé » : la commande reçue après la dernière modification du panier. */
+  order: { id: string; number: string; received_at: string } | null;
+  /** Relances du client depuis la fiche du panier. */
+  contacts: { via: ContactWay; at: string }[];
+};
+
 type Value = {
   orders: Order[];
+  /** Paniers en cours (équipe). Vide en mode visite. */
+  carts: Cart[];
+  cartsError: string | null;
+  /** Note que le client a été relancé (WhatsApp, appel, e-mail). */
+  contactCart: (id: string, via: ContactWay) => Promise<void>;
+  removeCart: (id: string) => Promise<void>;
   /** 'examples' : mode visite, seules les commandes fictives sont transmises par le serveur. */
   scope: 'all' | 'examples';
   loading: boolean;
@@ -100,13 +148,25 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [loadedAt, setLoadedAt] = useState<number | null>(null);
   const [logistics, setLogistics] = useState<Logistics | null>(null);
+  const [carts, setCarts] = useState<Cart[]>([]);
+  const [cartsError, setCartsError] = useState<string | null>(null);
   const alive = useRef(true);
 
   const fetchAll = useCallback(async (quiet: boolean) => {
     if (!quiet) setRefreshing(true);
     try {
-      const data = await api<{ orders: Order[]; scope: 'all' | 'examples'; logistics: Logistics | null }>('/api/orders');
+      // Les paniers sont relus avec les commandes ; s'ils échouent, les commandes restent affichées.
+      const [data, cartData] = await Promise.all([
+        api<{ orders: Order[]; scope: 'all' | 'examples'; logistics: Logistics | null }>('/api/orders'),
+        api<{ carts: Cart[] }>('/api/orders?vue=paniers').catch((err: unknown) => ({ carts: null, error: messageOf(err) })),
+      ]);
       if (!alive.current) return;
+      if (Array.isArray(cartData.carts)) {
+        setCarts(cartData.carts);
+        setCartsError(null);
+      } else if (!quiet) {
+        setCartsError('error' in cartData ? String(cartData.error) : 'Paniers indisponibles.');
+      }
       setOrders([...data.orders].sort((a, b) => b.created_at.localeCompare(a.created_at)));
       setScope(data.scope);
       setLogistics(data.logistics ?? null);
@@ -146,6 +206,18 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
 
   const value: Value = {
     orders,
+    carts,
+    cartsError,
+    contactCart: async (id, via) => {
+      guard();
+      const row = await api<Cart>('/api/orders', { method: 'PUT', body: { cart: { id, contacted_via: via } } });
+      setCarts((list) => list.map((c) => (c.id === id ? row : c)));
+    },
+    removeCart: async (id) => {
+      guard();
+      await api('/api/orders', { method: 'DELETE', body: { cartId: id } });
+      setCarts((list) => list.filter((c) => c.id !== id));
+    },
     scope,
     loading,
     refreshing,

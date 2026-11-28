@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { buildDocument, DEFAULT_RULES } from '../shared/catalog.js';
-import { toAppDocument, formatOf, visibilityOfZone, nounOf, campaignsOf } from '../shared/catalog-v2.js';
+import { toAppDocument, formatOf, visibilityOfZone, nounOf, campaignsOf, categoriesOf } from '../shared/catalog-v2.js';
 
 let passed = 0;
 const test = (name, fn) => {
@@ -169,6 +169,24 @@ test('annonces : bouton, toucher l’image, image seule sans produit', () => {
   assert.deepEqual([out[0].link, out[0].cta], ['button', 'Voir']);
   assert.deepEqual([out[1].link, out[1].id, 'cta' in out[1]], ['tap', 'poire', false]);
   assert.deepEqual([out[2].link, out[2].id, out[2].photo], ['none', null, { url: 'https://x/c.png' }]);
+});
+
+test('nom d’unité d’un emballage : le nom, sans son contenu, accordé au pluriel', () => {
+  assert.deepEqual(nounOf('Petit carton'), ['petit carton', 'petits cartons']);
+  assert.deepEqual(nounOf('Pot en verre de 200 g'), ['pot en verre', 'pots en verre']);
+  assert.deepEqual(nounOf('Carton de 4 kg'), ['carton', 'cartons']);
+  assert.deepEqual(nounOf('Seau'), ['seau', 'seaux']);
+  assert.deepEqual(nounOf(''), ['emballage', 'emballages']);
+});
+test('emballage au prix d’un pays en francs CFA (?pays=) : devise publiée', () => {
+  assert.equal(formatOf({ id: 's', label: 'Sachet', qty: 500, unit: 'g', price: 2500, currency: 'XOF', step: 1, available: true }, 'm').currency, 'XOF');
+  assert.equal(formatOf({ id: 's', label: 'Sachet', qty: 500, unit: 'g', price: 3, step: 1, available: true }, 'm').currency, 'EUR');
+});
+test('rayon illustré par un produit : sa photo envoyée, sinon sa photo embarquée', () => {
+  const cats = categoriesOf([{ id: 'fruits', label: 'Fruits', illustration: { product: 'mangue' } }, { id: 'x', label: 'X', illustration: { product: 'pomme' } }],
+    [{ id: 'mangue', photo: { url: 'https://x/m.webp' } }, { id: 'pomme', photo: { asset: 'pomme' } }]);
+  assert.deepEqual(cats[0].image, { url: 'https://x/m.webp', product: 'mangue' });
+  assert.deepEqual(cats[1].image, { asset: 'pomme' });
 });
 
 console.log(`\n${passed} vérifications, 0 échec.`);

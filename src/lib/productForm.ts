@@ -52,7 +52,7 @@ export type PackForm = {
   countries: PackCountryForm[];
 };
 /** Réglage d'un emballage pour un groupe de pays. `own` : « prix propre », sinon prix d'origine. */
-export type PackCountryForm = { key: string; countries: string[]; available: boolean; own: boolean; price: string; /** « Photo propre », sinon la même photo que l'emballage d'origine. */ ownPhoto: boolean; photo: string };
+export type PackCountryForm = { key: string; countries: string[]; available: boolean; own: boolean; price: string; /** Devise du prix propre : euro, ou franc CFA. */ currency: 'EUR' | 'XOF'; /** « Photo propre », sinon la même photo que l'emballage d'origine. */ ownPhoto: boolean; photo: string };
 
 export type Form = {
   id: string;
@@ -94,7 +94,7 @@ export type Form = {
 let sequence = 0;
 
 export const newPack = (): PackForm => ({ key: `emballage-${++sequence}`, id: '', label: '', qty: '', unit: 'kg', price: '', step: '1', min: '', max: '', audience: 'tous', available: true, photo: '', description: '', countries: [] });
-export const newPackCountry = (): PackCountryForm => ({ key: `emballage-pays-${++sequence}`, countries: [], available: true, own: false, price: '', ownPhoto: false, photo: '' });
+export const newPackCountry = (): PackCountryForm => ({ key: `emballage-pays-${++sequence}`, countries: [], available: true, own: false, price: '', currency: 'EUR', ownPhoto: false, photo: '' });
 
 /** Emballage tel qu'il sera envoyé (et tel que l'aperçu client le montre pendant la saisie). */
 export const packInput = (k: PackForm): Packaging => ({
@@ -118,6 +118,7 @@ export const packInput = (k: PackForm): Packaging => ({
           available: g.available,
           own: g.available && g.own,
           price: g.available && g.own ? parseNum(g.price) : null,
+          ...(g.available && g.own && g.currency === 'XOF' ? { currency: 'XOF' as const } : null),
           ownPhoto: g.available && g.ownPhoto,
           photo_url: g.available && g.ownPhoto ? g.photo || null : null,
         })),
@@ -193,7 +194,7 @@ export function toForm(p: Product | null, category: string): Form {
     max: numStr(r?.max),
     countryPrices: (r?.countryPrices ?? []).map((g) => ({ key: `prix-pays-${++sequence}`, countries: [...g.countries], price: numStr(g.price) })),
     offers: (p?.wholesale ?? []).map(offerToForm),
-    packs: (p?.packagings ?? []).map((k) => ({ key: `emballage-${++sequence}`, id: k.id, label: k.label, qty: numStr(k.qty), unit: k.unit, price: numStr(k.price), step: numStr(k.step ?? 1), min: numStr(k.min), max: numStr(k.max), audience: k.audience, available: k.available, photo: k.photo_url ?? '', description: k.description ?? '', countries: (k.countryRules ?? []).map((g) => ({ key: `emballage-pays-${++sequence}`, countries: [...g.countries], available: g.available !== false, own: g.price !== null && g.price !== undefined, price: numStr(g.price), ownPhoto: !!g.photo_url, photo: g.photo_url ?? '' })) })),
+    packs: (p?.packagings ?? []).map((k) => ({ key: `emballage-${++sequence}`, id: k.id, label: k.label, qty: numStr(k.qty), unit: k.unit, price: numStr(k.price), step: numStr(k.step ?? 1), min: numStr(k.min), max: numStr(k.max), audience: k.audience, available: k.available, photo: k.photo_url ?? '', description: k.description ?? '', countries: (k.countryRules ?? []).map((g) => ({ key: `emballage-pays-${++sequence}`, countries: [...g.countries], available: g.available !== false, own: g.price !== null && g.price !== undefined, price: numStr(g.price), currency: g.currency === 'XOF' ? 'XOF' : 'EUR', ownPhoto: !!g.photo_url, photo: g.photo_url ?? '' })) })),
     rating: Number(p?.rating) || 0,
     reviews: p?.reviews ?? 0,
     is_example: p?.is_example ?? false,

@@ -30,6 +30,7 @@ const OrdersClients = lazyScreen(() => import('./pages/Orders').then((m) => ({ d
 const OrdersStats = lazyScreen(() => import('./pages/Orders').then((m) => ({ default: m.OrdersStats })));
 const OrdersStatus = lazyScreen(() => import('./pages/Orders').then((m) => ({ default: m.OrdersStatus })));
 const OrdersDelivery = lazyScreen(() => import('./pages/Orders').then((m) => ({ default: m.OrdersDelivery })));
+const OrdersCarts = lazyScreen(() => import('./pages/Carts').then((m) => ({ default: m.OrdersCarts })));
 
 const later = (node: ReactNode) => (
   <Suspense
@@ -164,6 +165,7 @@ const router = createHashRouter([
       { path: 'publications', element: later(<Publications />) },
       { path: 'reglages', element: later(<Settings />) },
       { path: 'commandes', element: later(<OrdersList />) },
+      { path: 'commandes/paniers', element: later(<OrdersCarts />) },
       { path: 'commandes/clients', element: later(<OrdersClients />) },
       { path: 'commandes/statistiques', element: later(<OrdersStats />) },
       { path: 'commandes/statuts', element: later(<OrdersStatus />) },

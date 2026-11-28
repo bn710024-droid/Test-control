@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
-import { add, airplaneOutline, appsOutline, checkmarkCircle, chevronForward, cloudOfflineOutline, createOutline, flaskOutline, imageOutline, linkOutline, pricetagOutline, shieldCheckmarkOutline, timeOutline } from '../lib/glyphs';
+import { add, airplaneOutline, appsOutline, basketOutline, checkmarkCircle, chevronForward, cloudOfflineOutline, createOutline, flaskOutline, imageOutline, linkOutline, pricetagOutline, shieldCheckmarkOutline, timeOutline } from '../lib/glyphs';
 import { useAuth } from '../contexts/AuthContext';
 import { useData, type Product } from '../contexts/DataContext';
 import { Wordmark } from '../components/Shell';
@@ -9,6 +9,8 @@ import { Icon } from '../components/Icon';
 import { CategoryRail, ProductArt, priceInfo } from '../components/catalog';
 import { Chip, ErrorPanel, Page, SectionHead, SkeletonRows } from '../components/ui';
 import { MONTHS, ago, count, currentMonth, isAllYear, plural } from '../lib/format';
+import { api } from '../lib/api';
+import type { Cart } from '../contexts/OrdersContext';
 import { cx, glow } from '../lib/ui';
 
 type Task = { key: string; tone: 'danger' | 'star' | 'neutral'; icon: string; title: string; detail: string; to: string };
@@ -53,9 +55,9 @@ function Figure({ value, label, to, tone }: { value: number; label: string; to: 
   );
 }
 
-function Tile({ to, label, value, detail, tone }: { to: string; label: string; value: number; detail: string; tone?: 'star' | 'leaf' }) {
+function Tile({ to, label, value, detail, tone, wide }: { to: string; label: string; value: number; detail: string; tone?: 'star' | 'leaf'; wide?: boolean }) {
   return (
-    <Link to={to} className="press card block p-4">
+    <Link to={to} className={cx('press card block p-4', wide && 'col-span-2')}>
       <span className="label-voice block truncate text-[12px] text-fg-faint">{label}</span>
       <span className={cx('poster-voice tabular mt-1.5 block text-[38px] leading-[38px]', tone === 'star' && value > 0 && 'text-star', tone === 'leaf' && 'text-leaf')}>
         <CountUp value={value} />
@@ -84,19 +86,36 @@ function SeasonCard({ product: p }: { product: Product }) {
 /** Ce que l'application d'achat garde sur l'appareil du client : aucune donnée n'arrive ici. */
 const NOT_CONNECTED = [
   { title: 'Paiements', why: 'Aucun prestataire n’est branché : l’équipe pointe ici le paiement reçu.' },
-  { title: 'Moyens de paiement', why: 'Liste fixe (Orange Money, Wave, virement, carte) écrite dans la tour : pas encore réglable ici.' },
-  { title: 'Comptes clients', why: 'Créés et conservés sur chaque appareil, sans serveur.' },
+  { title: 'Comptes clients', why: 'Créés et conservés sur chaque appareil, sans serveur (leur panier en cours, lui, arrive ici).' },
   { title: 'Messages de suivi', why: 'Envoyés à l’application à chaque statut, pas encore affichés au client.' },
-  { title: 'Étapes des demandes professionnelles', why: 'Le client voit « En attente de réponse » jusqu’au contrat, pas « Contacté » ni « En discussion ».' },
-  { title: 'Publications photo', why: 'Publiées ici, pas encore affichées par l’application.' },
   { title: 'Avis et notes', why: 'Aucun système d’avis : les notes affichées sont des exemples.' },
 ];
+
+/** Paniers en cours (espace commandes) : actifs, et abandonnés pas encore relancés depuis leur dernière modification. */
+function useCartSummary() {
+  const [summary, setSummary] = useState<{ active: number; toContact: number } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    api<{ carts: Cart[] }>('/api/orders?vue=paniers')
+      .then(({ carts }) => {
+        if (!alive) return;
+        const relaunched = (c: Cart) => c.contacts.some((k) => k.at > c.updated_at);
+        setSummary({ active: carts.filter((c) => c.status === 'actif').length, toContact: carts.filter((c) => c.status === 'abandonne' && !relaunched(c)).length });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return summary;
+}
 
 export default function Dashboard() {
   const { products, categories, settings, activity, loading, error, reload, issuesOf, pendingRefs } = useData();
   const { isOwner } = useAuth();
   const [showOff, setShowOff] = useState(false);
   const month = currentMonth();
+  const carts = useCartSummary();
 
   const s = useMemo(() => {
     const active = products.filter((p) => !p.archived);
@@ -172,11 +191,14 @@ export default function Dashboard() {
     if (s.example > 0) {
       list.push({ key: 'exemple', tone: 'neutral', icon: flaskOutline, title: `${plural(s.example, 'fiche', 'fiches')} en données d’exemple`, detail: 'Prix, origines et notes repris du catalogue d’exemple de l’application : à vérifier un par un.', to: '/produits?etat=exemple' });
     }
+    if (carts && carts.toContact > 0) {
+      list.push({ key: 'paniers', tone: 'star', icon: basketOutline, title: `${plural(carts.toContact, 'panier abandonné', 'paniers abandonnés')} à relancer`, detail: 'Sans modification depuis 24 h : un message pré-rempli attend dans chaque fiche.', to: '/commandes/paniers' });
+    }
     if (settings?.link && !settings.link.appLinked) {
       list.push({ key: 'link', tone: 'neutral', icon: linkOutline, title: 'Application d’achat non reliée', detail: 'Vos modifications sont publiées ici, mais l’application lit encore son catalogue embarqué.', to: '/reglages?section=publication' });
     }
     return list;
-  }, [s, pendingRefs, settings, isOwner]);
+  }, [s, pendingRefs, settings, isOwner, carts]);
 
   if (error) {
     return (
@@ -258,6 +280,9 @@ export default function Dashboard() {
               <Tile to="/produits?etat=exemple" label="Données d’exemple" value={s.example} detail={s.example === 0 ? 'Plus aucune donnée d’exemple.' : 'Fiches à vérifier avant mise en service.'} />
               <Tile to="/prix?vue=pro" label="Offres pro" value={s.offers} detail={`Sur ${plural(s.offerProducts, 'produit', 'produits')}.`} />
               <Tile to="/produits?etat=saison" label={`De saison`} value={s.inSeason.length} tone="leaf" detail={`Visibles et de saison en ${MONTHS[month - 1]}.`} />
+              {carts && (
+                <Tile wide to="/commandes/paniers" label="Paniers actifs" value={carts.active} tone="leaf" detail={carts.active === 0 ? 'Aucun panier en cours dans l’application.' : 'Paniers modifiés il y a moins de 24 h, dans l’application.'} />
+              )}
             </div>
 
             <SectionHead title="À traiter" right={tasks.length > 0 ? <span className="text-[13px] font-semibold text-fg-faint">{plural(tasks.length, 'tâche', 'tâches')}</span> : undefined} />

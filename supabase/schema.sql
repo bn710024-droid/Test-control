@@ -134,6 +134,19 @@ create index if not exists publication_reactions_account on publication_reaction
 create index if not exists publication_reactions_pub on publication_reactions (publication_id);
 alter table publication_reactions enable row level security;
 
+-- Paniers en cours (api/orders.js, `type: 'panier'` ; GET `?vue=paniers`). Un panier par compte,
+-- remplacé à chaque envoi de l'application. `enc` : le panier entier (client, lignes, totaux),
+-- chiffré par le serveur comme les commandes. `updated_at` : dernière modification du panier.
+-- `status` : 'actif' | 'commande' (l'état « abandonné » se calcule à la lecture).
+create table if not exists carts (
+  account_id text primary key,
+  enc text not null,
+  updated_at timestamptz not null default now(),
+  status text not null default 'actif'
+);
+alter table carts enable row level security;
+revoke all on carts from anon, authenticated;
+
 -- ───────────── Sécurité par ligne — À EXÉCUTER À LA MAIN avant une mise en production.
 -- Sans politique, seule la clé de service (routes /api) accède aux tables.
 alter table categories enable row level security;

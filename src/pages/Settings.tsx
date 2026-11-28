@@ -23,7 +23,8 @@ import { ago, initials, kgText, numStr, parseNum, plural } from '../lib/format';
 import { cx } from '../lib/ui';
 import { DEFAULT_RULES, parseCatalog, validateRules, type Errors, type QuantityRules } from '../../shared/catalog.js';
 import { PAYMENT_METHODS, paymentStates } from '../../shared/payments.js';
-import { TRANSPORT_ZONES, transportZonesOf, validateTransport, type TransportZone } from '../../shared/transport.js';
+import { CFA_ZONES, TRANSPORT_ZONES, transportZonesOf, validateTransport, type TransportZone } from '../../shared/transport.js';
+import { Choice } from '../components/CountryPrices';
 
 type Member = { user_id: string; email: string; provider: string; role: 'owner' | 'editor' | 'pending'; since: string | null };
 type Credit = { id: string; title: string; artist: string; license: string; url: string };
@@ -151,7 +152,7 @@ export default function Settings() {
   );
 
   // ───── Forfait transport des particuliers (en euros, par zone de destination)
-  const feesToForm = (zones: TransportZone[]) => Object.fromEntries(zones.map((z) => [z.id, numStr(z.fee)]));
+  const feesToForm = (zones: TransportZone[]) => Object.fromEntries(zones.flatMap((z) => [[z.id, numStr(z.fee)], [`${z.id}:devise`, z.currency]]));
   const storedFees = transportZonesOf(settings?.transport);
   const feesKey = JSON.stringify(storedFees);
   const [fees, setFees] = useState<Record<string, string>>(() => feesToForm(storedFees));
@@ -163,7 +164,12 @@ export default function Settings() {
   const feesDirty = JSON.stringify(fees) !== JSON.stringify(feesToForm(storedFees));
 
   const submitFees = async () => {
-    const asked = Object.fromEntries(TRANSPORT_ZONES.map((z) => [z.id, parseNum(fees[z.id] ?? '')]));
+    const asked = Object.fromEntries(
+      TRANSPORT_ZONES.map((z) => {
+        const fee = parseNum(fees[z.id] ?? '');
+        return [z.id, fees[`${z.id}:devise`] === 'XOF' && fee !== null ? { fee, currency: 'XOF' } : fee];
+      }),
+    );
     const { errors, value } = validateTransport(asked);
     setFeeErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -567,8 +573,8 @@ export default function Settings() {
             {/* ───── Transport des particuliers */}
             <Block id="transport" title="Transport des particuliers">
               <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
-                Forfait ajouté à une commande « avec transport », selon le pays de livraison, au départ du Sénégal. Montants en euros,
-                publiés dans le catalogue.{!settings?.transport && ' Barème d’exemple tant qu’il n’a pas été enregistré : remplacez-le par vos tarifs.'}
+                Forfait ajouté à une commande « avec transport », selon le pays de livraison, au départ du Sénégal. Montants en euros
+                (en francs CFA possible pour le Sénégal et l’Afrique de l’Ouest), publiés dans le catalogue.{!settings?.transport && ' Barème d’exemple tant qu’il n’a pas été enregistré : remplacez-le par vos tarifs.'}
                 {!isOwner && ' Seul un responsable peut les modifier.'}
               </p>
               <div className="mt-3 grid grid-cols-2 gap-2.5">
@@ -578,7 +584,7 @@ export default function Settings() {
                     label={z.label}
                     compact
                     inputMode="decimal"
-                    suffix="€"
+                    suffix={fees[`${z.id}:devise`] === 'XOF' ? 'F CFA' : '€'}
                     disabled={!isOwner}
                     value={fees[z.id] ?? ''}
                     onValue={(v) => {
@@ -586,10 +592,28 @@ export default function Settings() {
                       setFeeErrors((e) => (e[z.id] ? { ...e, [z.id]: '' } : e));
                     }}
                     error={feeErrors[z.id] || undefined}
-                    className="pr-[46px]"
+                    className="pr-[64px]"
                   />
                 ))}
               </div>
+              {/* Zones du franc CFA : le forfait peut être dans la même devise que les prix de ces pays. */}
+              {CFA_ZONES.map((id) => {
+                const zone = TRANSPORT_ZONES.find((z) => z.id === id)!;
+                return (
+                  <div key={id}>
+                    <p className="mb-[7px] mt-3.5 text-[13px] font-semibold text-fg-dim">Devise du forfait · {zone.label}</p>
+                    <Choice
+                      label={`Devise du forfait de transport · ${zone.label}`}
+                      value={fees[`${id}:devise`] === 'XOF' ? 'XOF' : 'EUR'}
+                      onChange={(c) => isOwner && setFees((f) => ({ ...f, [`${id}:devise`]: c }))}
+                      options={[
+                        ['EUR', 'Euro (€)'],
+                        ['XOF', 'Franc CFA'],
+                      ]}
+                    />
+                  </div>
+                );
+              })}
               {isOwner && (
                 <div className="mt-5 flex flex-wrap items-center gap-2.5">
                   <PrimaryButton className="!w-auto min-w-[200px] flex-1" label="Enregistrer les forfaits" disabled={!feesDirty && !!settings?.transport} loading={savingFees} onClick={submitFees} />

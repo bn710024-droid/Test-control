@@ -5,7 +5,7 @@ import { useData, type Product } from '../contexts/DataContext';
 import { Backdrop } from './Shell';
 import { CategoryRound, ProductArt, SeasonStrip } from './catalog';
 import { Segmented } from './ui';
-import { MONTHS, currentMonth, euro, isAllYear, isInSeason, nextSeasonStart } from '../lib/format';
+import { MONTHS, amount, currentMonth, euro, isAllYear, isInSeason, nextSeasonStart } from '../lib/format';
 import { cx, glow } from '../lib/ui';
 import { countryName, packContent, packCountryRules, packFor, packRange, packRuleText, packTotal, zoneAllows, zoneLabel, type PackAudience, type Packaging, type Zone } from '../../shared/catalog.js';
 
@@ -453,12 +453,12 @@ export function ProductPreview({ product: raw, focusPack }: { product: PreviewPr
 
   const hiddenCount = raw.packs.length - packs.length;
   const base = audience === 'pros' ? 'Prix selon l’offre' : p.price !== null ? euro(p.price) : 'Prix à confirmer';
-  const priceText = chosen ? (chosen.price !== null ? euro(chosen.price) : 'Prix à confirmer') : base;
+  const priceText = chosen ? (chosen.price !== null ? amount(chosen.price, chosen.currency) : 'Prix à confirmer') : base;
   const priceUnit = chosen ? (chosen.price !== null ? `· ${chosen.label || 'l’emballage'}` : '') : audience === 'pros' || p.price === null ? '' : p.unit;
   const allYear = isAllYear(p.months);
   const inSeason = isInSeason(p.months);
   const seasonStatus = p.months.length === 0 ? 'Saison à renseigner' : allYear ? 'Disponible toute l’année' : inSeason ? 'En pleine saison' : `Retour en ${MONTHS[nextSeasonStart(p.months) - 1]}`;
-  const totalText = total !== null ? euro(total) : 'À confirmer';
+  const totalText = total !== null ? amount(total, chosen?.currency) : 'À confirmer';
   // Comme dans l'application, le total rétrécit quand il s'allonge : il n'est jamais coupé.
   const totalSize = totalText.length <= 7 ? 'text-[17px] max-[380px]:text-[15px]' : totalText.length <= 9 ? 'text-[15px] max-[380px]:text-[13px]' : 'text-[13px] max-[380px]:text-[11.5px]';
   const sheet = useRef<HTMLDivElement>(null);
@@ -473,7 +473,7 @@ export function ProductPreview({ product: raw, focusPack }: { product: PreviewPr
   const glass = 'grid h-10 w-10 place-items-center rounded-full border border-line bg-white/[0.09] backdrop-blur-md';
   const rows = [
     ...(retail ? [{ id: null as string | null, photo: null as string | null, title: 'Au détail', sub: `Prix global · ${p.unit}`, price: p.price !== null ? euro(p.price) : 'À confirmer' }] : []),
-    ...packs.map((k) => ({ id: k.id as string | null, photo: k.photo_url || null, title: k.label || 'Emballage sans nom', sub: packContent(k) ? `Contient ${packContent(k)}` : 'Contenu à préciser', price: k.price !== null ? euro(k.price) : 'À confirmer' })),
+    ...packs.map((k) => ({ id: k.id as string | null, photo: k.photo_url || null, title: k.label || 'Emballage sans nom', sub: packContent(k) ? `Contient ${packContent(k)}` : 'Contenu à préciser', price: k.price !== null ? amount(k.price, k.currency) : 'À confirmer' })),
   ];
 
   return (

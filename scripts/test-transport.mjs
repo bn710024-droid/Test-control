@@ -52,4 +52,17 @@ test('catalogue ?v=2 : rien publié sans réglage', () => {
   assert.equal('transport' in toAppDocument(base, { demoIds: new Set(), gp: [] }), false);
 });
 
+test('Sénégal en francs CFA : accepté (entier), publié avec sa devise', () => {
+  const { errors, value } = validateTransport({ ...full, sn: { fee: 2500, currency: 'XOF' } });
+  assert.deepEqual(errors, {});
+  assert.deepEqual(value.sn, { fee: 2500, currency: 'XOF' });
+  const sn = transportZonesOf(value).find((z) => z.id === 'sn');
+  assert.deepEqual([sn.fee, sn.currency], [2500, 'XOF']);
+});
+
+test('francs CFA : centimes refusés ; hors zone CFA, la devise reste l’euro', () => {
+  assert.ok(validateTransport({ ...full, ao: { fee: 12.5, currency: 'XOF' } }).errors.ao);
+  assert.equal(transportZonesOf({ ...full, eu: { fee: 40, currency: 'XOF' } }).find((z) => z.id === 'eu').currency, 'EUR');
+});
+
 console.log(`\n${passed}/${passed} tests réussis`);

@@ -4,6 +4,7 @@ import { preflight, requireAdmin, optionalAdmin, readBody, log, serverError } fr
 import { tooMany } from './_limit.js';
 import { vaultSeal, vaultOpen, sealRows } from './_seal.js';
 import { stampOf, sameButLocation } from '../shared/stamp.js';
+import { receiveCart, listCarts, updateCart, removeCart } from './_carts.js';
 import { resolveOffer, parseRules, isCountryCode } from '../shared/catalog.js';
 import { isRequestStatus, requestKey, requestStatusLabel } from '../shared/requests.js';
 import { clientNotice, isSenegal, PRO_STAGES, isProStage, proStageOf, proStageFromStatus, proStageLabel, statusOfProStage } from '../shared/orders.js';
@@ -37,6 +38,11 @@ import { clientNotice, isSenegal, PRO_STAGES, isProStage, proStageOf, proStageFr
  *  GET    `?vue=introuvables` : les demandes (équipe uniquement — elles portent un nom et un contact) ;
  *  PUT    `{ request: { id, status?, note? } }` : suivi par l'équipe ;
  *  DELETE `{ requestId }` : suppression définitive (responsables).
+ *
+ * Paniers en cours (api/_carts.js) — l'état complet du panier de l'application, un par compte :
+ *  POST   `{ type: 'panier', account: { id, secret, … }, lines, updatedAt }` : sans connexion ;
+ *  GET    `?vue=paniers` (équipe) ; PUT `{ cart: { id, contacted_via } }` (équipe) ;
+ *  DELETE `{ cartId }` (responsables).
  *
  * Les commandes contiennent des données personnelles : chaque ligne est chiffrée (AES-256-GCM)
  * avant d'être enregistrée. La table ne contient que du texte illisible sans la clé du serveur.
@@ -571,6 +577,8 @@ export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
       // Demandes de produits introuvables : réservées à l'équipe, elles portent un nom et un contact.
+      // Paniers en cours : réservés à l'équipe (api/_carts.js).
+      if (req.query?.vue === 'paniers') return listCarts(req, res, { loadOrders: loadAll });
       if (req.query?.vue === 'introuvables') {
         const admin = await optionalAdmin(req);
         res.setHeader('Cache-Control', 'no-store');
@@ -622,6 +630,7 @@ export default async function handler(req, res) {
       const body = readBody(req);
       if (body.type === 'commande' || body.type === 'demande_professionnelle') return receive(req, body, res);
       if (body.type === 'produit_introuvable') return receiveRequest(req, body, res);
+      if (body.type === 'panier') return receiveCart(req, body, res, { loadOrders: loadAll });
       if (body.action === 'position') return trackPosition(req, body, res);
       if (body.action === 'examples') {
         const admin = await requireAdmin(req, res, { owner: true });
@@ -637,6 +646,9 @@ export default async function handler(req, res) {
       const admin = await requireAdmin(req, res);
       if (!admin) return;
       const body = readBody(req);
+
+      // Panier en cours : le client a été relancé (api/_carts.js).
+      if (body.cart && typeof body.cart === 'object') return updateCart(admin, body.cart, res, { loadOrders: loadAll });
 
       // Suivi d'une demande de produit introuvable : son étape, et la note interne de l'équipe.
       if (body.request && typeof body.request === 'object') {
@@ -840,6 +852,7 @@ export default async function handler(req, res) {
       const admin = await requireAdmin(req, res, { owner: true });
       if (!admin) return;
       const body = readBody(req);
+      if (body.cartId !== undefined) return removeCart(admin, body.cartId, res);
       if (body.requestId !== undefined) {
         const { data: row, error } = await supabase.from(REQUESTS).select('*').eq('id', String(body.requestId)).maybeSingle();
         if (error) throw error;

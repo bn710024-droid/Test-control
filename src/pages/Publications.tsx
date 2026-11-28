@@ -724,8 +724,8 @@ function VideoSheet({ target, onClose, onSaved }: { target: VideoPub | 'new' | n
       )}
       {src && canEdit && <GhostButton compact className="mt-3" label={reading ? 'Lecture…' : 'Remplacer le fichier'} disabled={reading || !!step} onClick={() => fileInput.current?.click()} />}
 
-      <Field label="Titre" value={form.title} maxLength={80} placeholder="Mangue du Sénégal : la campagne arrive" onValue={(v) => setForm((f) => ({ ...f, title: v }))} error={errors.title || undefined} />
-      <TextArea label="Description" optional value={form.description} maxLength={220} className="!min-h-[92px]" onValue={(v) => setForm((f) => ({ ...f, description: v }))} error={errors.description || undefined} hint={`${form.description.trim().length} / 220 caractères`} />
+      <Field label="Titre" value={form.title} maxLength={80} placeholder="Mangue du Sénégal : la campagne arrive" onValue={(v) => setForm((f) => ({ ...f, title: v }))} error={errors.title || undefined} hint="Sert à reconnaître la vidéo ici et à la lecture d’écran ; l’application ne l’affiche pas sur la vidéo." />
+      <TextArea label="Description" optional value={form.description} maxLength={220} className="!min-h-[92px]" onValue={(v) => setForm((f) => ({ ...f, description: v }))} error={errors.description || undefined} hint={`${form.description.trim().length} / 220 caractères · gardée ici, pas encore affichée par l’application.`} />
       <p className="mb-[7px] mt-4 text-[13px] font-semibold text-fg-dim">Visible par</p>
       <Segmented
         label="Public de la vidéo"
@@ -975,7 +975,7 @@ function AnnonceSheet({ target, onClose, onSaved, products, byId, others }: {
             )}
             {shot && canEdit && <GhostButton compact className="mt-3" label={reading ? 'Lecture…' : 'Remplacer l’image'} disabled={reading || busy} onClick={() => fileInput.current?.click()} />}
             {shot && <p className="mt-2 px-1 text-[12.5px] leading-[18px] text-fg-faint">Le bandeau est horizontal : les bords d’une image trop haute sont rognés. Gardez l’essentiel au centre.</p>}
-            <TextArea label="Texte sur l’image" optional value={form.body} maxLength={120} className="!min-h-[76px]" placeholder="La campagne de mangue commence en mai." onValue={(v) => setForm((f) => ({ ...f, body: v }))} error={errors.body || undefined} hint={`${form.body.trim().length} / 120 · en bas de l’image. Laissez vide si le texte est déjà dans votre image.`} />
+            <TextArea label="Texte sur l’image" optional value={form.body} maxLength={120} className="!min-h-[76px]" placeholder="La campagne de mangue commence en mai." onValue={(v) => setForm((f) => ({ ...f, body: v }))} error={errors.body || undefined} hint={form.link === 'button' ? `${form.body.trim().length} / 120 · en bas de l’image. Laissez vide si le texte est déjà dans votre image.` : `${form.body.trim().length} / 120 · non affiché par l’application avec « ${form.link === 'tap' ? 'Toucher l’image' : 'Aucun'} » : l’image est montrée seule. Mettez le texte dans l’image, ou choisissez un bouton.`} />
             <p className="mb-2 mt-4 text-[13px] font-semibold text-fg-dim">Quand le client touche l’annonce</p>
             <LinkPicker
               link={form.link}

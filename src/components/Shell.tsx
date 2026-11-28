@@ -35,7 +35,7 @@ export function Wordmark({ compact, responsive }: { compact?: boolean; responsiv
   );
 }
 
-type Tab = { to: string; label: string; end: boolean; hint: string };
+export type Tab = { to: string; label: string; end: boolean; hint: string };
 const TABS: Tab[] = [
   { to: '/', label: 'Contrôle', end: true, hint: 'État du catalogue et tâches' },
   { to: '/produits', label: 'Produits', end: false, hint: 'Fiches, photos, commercialisation' },
@@ -73,7 +73,7 @@ function useNav() {
 }
 
 /** Panneau « Plus » : les autres écrans, en liste. */
-function MoreSheet({ open, onClose, tabs }: { open: boolean; onClose: () => void; tabs: Tab[] }) {
+export function MoreSheet({ open, onClose, tabs }: { open: boolean; onClose: () => void; tabs: Tab[] }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   return (

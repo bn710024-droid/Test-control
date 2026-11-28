@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { Link, NavLink, Outlet, ScrollRestoration } from 'react-router-dom';
+import { Link, NavLink, Outlet, ScrollRestoration, useLocation, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { OrdersProvider, useOrders, type Logistics, type Order, type OrderLine, type OrderPatch, type OrderStatus, type PayMethod } from '../contexts/OrdersContext';
-import { Backdrop } from '../components/Shell';
+import { Backdrop, MoreSheet } from '../components/Shell';
 import { Chip, EmptyState, ErrorPanel, Field, FilterChip, GhostButton, Notice, Page, PageHeader, PrimaryButton, Segmented, Sheet, SkeletonRows } from '../components/ui';
 import { CountryChips } from '../components/CountryChips';
 import { ApiError, messageOf } from '../lib/api';
@@ -12,6 +12,8 @@ import { MONTHS, ago, amount, count, dateTime, kgText, money, normalize, plural 
 import { cx } from '../lib/ui';
 import { PRO_STAGES, clientNotice, proStageLabel, proStageOf, type ProStage } from '../../shared/orders.js';
 import { countryName, isCountryCode } from '../../shared/catalog.js';
+import { ACTIVITY, Kpi, Refresh, Row, contactLink, nameInitials } from './ordersKit';
+import { ClientCart } from './Carts';
 
 // ───────────── Repères communs
 
@@ -34,7 +36,6 @@ const METHODS: { id: PayMethod; label: string }[] = [
   { id: 'carte', label: 'Carte bancaire' },
 ];
 const PAYMENT: Record<string, string> = { orange_money: 'Orange Money', wave: 'Wave', virement: 'Virement bancaire', carte: 'Carte bancaire', mobile: 'Mobile money' };
-const ACTIVITY: Record<string, string> = { grossiste: 'Grossiste', importateur: 'Importateur', autre: 'Autre professionnel' };
 
 const customerName = (o: Order) => o.customer.company || o.customer.name || o.customer.email || o.customer.phone || 'Client sans nom';
 const customerKey = (o: Order) => (o.customer.account_id || o.customer.email || o.customer.phone || customerName(o)).toLowerCase();
@@ -48,10 +49,6 @@ const euroTotal = (o: Order) => (isEuro(o) ? o.total : 0);
 /** « · 2 commandes en F CFA non comptées » : ce que les montants en euros laissent de côté. */
 const otherCurrencyNote = (n: number) => (n > 0 ? ` ${n} ${n > 1 ? 'commandes' : 'commande'} dans une autre devise, non ${n > 1 ? 'comptées' : 'comptée'}.` : '');
 const amountText = (o: Order) => (o.total > 0 ? `${amount(o.total, o.currency)}${o.unpriced > 0 ? ' +' : ''}` : 'À confirmer');
-const nameInitials = (name: string) => {
-  const parts = name.replace(/\(.*?\)/g, '').trim().split(/\s+/).filter(Boolean);
-  return parts.length === 0 ? '?' : (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
-};
 
 /** Sénégal : livraison par nos livreurs. Ailleurs : transit jusqu'à l'aéroport d'arrivée. */
 type Zone = 'senegal' | 'international' | 'inconnue';
@@ -267,8 +264,10 @@ function Column({ children }: { children: ReactNode }) {
 
 // ───────────── Cadre de l'espace : un univers à part, avec ses propres pages
 
+// `phone: false` : sur téléphone, l'onglet passe sous « Plus » (la barre du bas reste courte).
 const TABS = [
   { to: '/commandes', label: 'Commandes', short: 'Commandes', end: true },
+  { to: '/commandes/paniers', label: 'Paniers', short: 'Paniers', end: false, phone: false, hint: 'Paniers en cours dans l’application' },
   { to: '/commandes/statuts', label: 'Statuts', short: 'Statuts', end: false },
   { to: '/commandes/clients', label: 'Clients', short: 'Clients', end: false },
   { to: '/commandes/statistiques', label: 'Statistiques', short: 'Stats', end: false },
@@ -277,6 +276,10 @@ const TABS = [
 
 export function OrdersLayout() {
   const { user, canEdit } = useAuth();
+  const { pathname } = useLocation();
+  const [more, setMore] = useState(false);
+  const moreTabs = TABS.filter((t) => t.phone === false).map((t) => ({ to: t.to, label: t.label, end: t.end, hint: t.hint ?? '' }));
+  const moreActive = moreTabs.some((t) => pathname === t.to || pathname.startsWith(`${t.to}/`));
   return (
     <OrdersProvider key={user?.id ?? 'visite'}>
       <motion.div className="relative min-h-dvh" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.45 }}>
@@ -323,7 +326,7 @@ export function OrdersLayout() {
         <nav aria-label="Pages de l’espace commandes" className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-2 lg:hidden" style={{ paddingBottom: 'calc(max(env(safe-area-inset-bottom), 14px))' }}>
           <span className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-bg via-bg/85 to-transparent" />
           <div className="no-scrollbar pointer-events-auto relative flex max-w-full items-center overflow-x-auto rounded-full border border-line-strong bg-bar p-1.5 max-[359px]:p-1">
-            {TABS.map((tab) => (
+            {TABS.filter((tab) => tab.phone !== false).map((tab) => (
               <NavLink key={tab.to} to={tab.to} end={tab.end} aria-label={tab.label} className="press press-deep block min-w-11 shrink-0 rounded-full">
                 {({ isActive }) => (
                   <span className={cx('relative flex h-11 items-center justify-center rounded-full px-3.5 text-[13.5px] transition-colors duration-300 max-[429px]:px-[7px] max-[429px]:text-[12.5px] max-[359px]:px-1 max-[359px]:text-[11.5px]', isActive ? 'font-extrabold text-bg-deep' : 'font-bold text-fg-dim')}>
@@ -334,7 +337,14 @@ export function OrdersLayout() {
                 )}
               </NavLink>
             ))}
+            <button type="button" onClick={() => setMore(true)} aria-haspopup="dialog" aria-label="Plus d’écrans" className="press press-deep block min-w-11 shrink-0 rounded-full">
+              <span className={cx('relative flex h-11 items-center justify-center rounded-full px-3.5 text-[13.5px] transition-colors duration-300 max-[429px]:px-[7px] max-[429px]:text-[12.5px] max-[359px]:px-1 max-[359px]:text-[11.5px]', moreActive ? 'font-extrabold text-bg-deep' : 'font-bold text-fg-dim')}>
+                {moreActive && <motion.span layoutId="onglet-commandes" initial={false} className="absolute inset-0 bg-star" style={{ borderRadius: 9999 }} transition={{ type: 'spring', stiffness: 420, damping: 34 }} />}
+                <span className="relative">Plus</span>
+              </span>
+            </button>
           </div>
+          <MoreSheet open={more} onClose={() => setMore(false)} tabs={moreTabs} />
         </nav>
         <ScrollRestoration />
       </motion.div>
@@ -344,15 +354,6 @@ export function OrdersLayout() {
 
 // ───────────── Éléments partagés
 
-function Kpi({ label, value, detail, tone }: { label: string; value: string; detail?: string; tone?: 'leaf' | 'star' }) {
-  return (
-    <div className="card min-w-0 p-4">
-      <span className="label-voice block truncate text-[12px] text-fg-faint">{label}</span>
-      <span className={cx('poster-voice tabular mt-1.5 block truncate text-[30px] leading-[32px]', tone === 'leaf' && 'text-leaf', tone === 'star' && 'text-star')}>{value}</span>
-      {detail && <span className="mt-1.5 block text-[12.5px] leading-[17px] text-fg-dim">{detail}</span>}
-    </div>
-  );
-}
 
 function StatusChips({ order: o, bare }: { order: Order; bare?: boolean }) {
   return (
@@ -391,16 +392,8 @@ function OrderCard({ order: o, onOpen }: { order: Order; onOpen: () => void }) {
   );
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-2">
-      <dt className="shrink-0 text-[13px] text-fg-dim">{label}</dt>
-      <dd className="min-w-0 break-words text-right text-[14px] font-semibold">{children}</dd>
-    </div>
-  );
-}
 
-const contactLink = 'press inline-flex min-h-11 items-center rounded-full border border-line-strong px-4 text-[13.5px] font-bold';
+
 
 function Contact({ order: o }: { order: Order }) {
   const c = o.customer;
@@ -1034,21 +1027,18 @@ function Frame({ title, accent, subtitle, right, children }: { title: string; ac
   );
 }
 
-function Refresh() {
-  const { reload, refreshing } = useOrders();
-  return <GhostButton compact label="Actualiser" loading={refreshing} onClick={reload} className="shrink-0" />;
-}
 
 // ───────────── Page « Commandes »
 
 export function OrdersList() {
   const { loadedAt } = useOrders();
   const { list } = useScope();
+  const [params] = useSearchParams();
   const [status, setStatus] = useState<OrderStatus | 'toutes'>('toutes');
   const [type, setType] = useState<'tous' | 'particulier' | 'pro'>('tous');
   const [country, setCountry] = useState('');
   const [query, setQuery] = useState('');
-  const [openId, setOpenId] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(params.get('commande'));
 
   // Pays présents dans les commandes, du plus commandé au moins commandé.
   const countries = useMemo(() => {
@@ -1388,8 +1378,9 @@ type Client = { key: string; name: string; latest: Order; orders: Order[]; order
 
 export function OrdersClients() {
   const { list } = useScope();
+  const [params] = useSearchParams();
   const [query, setQuery] = useState('');
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  const [openKey, setOpenKey] = useState<string | null>(params.get('client'));
   const [openOrder, setOpenOrder] = useState<string | null>(null);
 
   const clients = useMemo(() => {
@@ -1474,6 +1465,7 @@ export function OrdersClients() {
                 <dd className="poster-voice tabular mt-1 text-[24px] leading-7 text-leaf">{money(opened.paid)}</dd>
               </div>
             </dl>
+            <ClientCart accountId={opened.key} />
             <h3 className="mt-5 font-display text-[18px] font-semibold">Ses commandes</h3>
             <ul className="mt-2.5 flex flex-col gap-2.5">
               {opened.orders.map((o) => (
