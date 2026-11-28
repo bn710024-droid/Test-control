@@ -578,7 +578,7 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       // Demandes de produits introuvables : réservées à l'équipe, elles portent un nom et un contact.
       // Paniers en cours : réservés à l'équipe (api/_carts.js).
-      if (req.query?.vue === 'paniers') return listCarts(req, res, { loadOrders: loadAll });
+      if (req.query?.vue === 'paniers') return await listCarts(req, res, { loadOrders: loadAll });
       if (req.query?.vue === 'introuvables') {
         const admin = await optionalAdmin(req);
         res.setHeader('Cache-Control', 'no-store');
@@ -628,10 +628,11 @@ export default async function handler(req, res) {
 
     if (req.method === 'POST') {
       const body = readBody(req);
-      if (body.type === 'commande' || body.type === 'demande_professionnelle') return receive(req, body, res);
-      if (body.type === 'produit_introuvable') return receiveRequest(req, body, res);
-      if (body.type === 'panier') return receiveCart(req, body, res, { loadOrders: loadAll });
-      if (body.action === 'position') return trackPosition(req, body, res);
+      // `await` : une erreur est rattrapée ici (réponse 500 propre, en-têtes CORS compris).
+      if (body.type === 'commande' || body.type === 'demande_professionnelle') return await receive(req, body, res);
+      if (body.type === 'produit_introuvable') return await receiveRequest(req, body, res);
+      if (body.type === 'panier') return await receiveCart(req, body, res, { loadOrders: loadAll });
+      if (body.action === 'position') return await trackPosition(req, body, res);
       if (body.action === 'examples') {
         const admin = await requireAdmin(req, res, { owner: true });
         if (!admin) return;
@@ -648,7 +649,7 @@ export default async function handler(req, res) {
       const body = readBody(req);
 
       // Panier en cours : le client a été relancé (api/_carts.js).
-      if (body.cart && typeof body.cart === 'object') return updateCart(admin, body.cart, res, { loadOrders: loadAll });
+      if (body.cart && typeof body.cart === 'object') return await updateCart(admin, body.cart, res, { loadOrders: loadAll });
 
       // Suivi d'une demande de produit introuvable : son étape, et la note interne de l'équipe.
       if (body.request && typeof body.request === 'object') {
@@ -852,7 +853,7 @@ export default async function handler(req, res) {
       const admin = await requireAdmin(req, res, { owner: true });
       if (!admin) return;
       const body = readBody(req);
-      if (body.cartId !== undefined) return removeCart(admin, body.cartId, res);
+      if (body.cartId !== undefined) return await removeCart(admin, body.cartId, res);
       if (body.requestId !== undefined) {
         const { data: row, error } = await supabase.from(REQUESTS).select('*').eq('id', String(body.requestId)).maybeSingle();
         if (error) throw error;

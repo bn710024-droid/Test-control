@@ -91,6 +91,8 @@ export default async function handler(req, res) {
           key: r.id,
           id: link === 'none' ? null : r.data.product_id,
           accent: r.data.accent ?? '',
+          kicker: r.data.kicker ?? '',
+          title: r.data.title ?? '',
           body: r.data.body ?? '',
           startsAt: r.data.starts_at ?? null,
           endsAt: r.data.ends_at ?? null,
@@ -113,7 +115,10 @@ export default async function handler(req, res) {
     const transportRow = settings.data.find((r) => r.key === 'transport') ?? null;
     if (transportRow && stateOf('settings', transportRow, seals) === 'ok') {
       // `currency` : la devise par défaut ; chaque zone dit la sienne (euro ou franc CFA).
-      doc.transport = { currency: 'EUR', zones: transportZonesOf(transportRow.value).map(({ id, label, fee, currency }) => ({ id, label, fee, currency })) };
+      const zones = transportZonesOf(transportRow.value).map(({ id, label, fee, currency }) => ({ id, label, fee, currency }));
+      // Une zone en francs CFA : `currency: 'XOF+EUR'`. Une application d'avant (qui exige 'EUR' et
+      // lirait tout en euros) ignore alors ces forfaits et garde son barème — jamais 3 000 « € ».
+      doc.transport = { currency: zones.some((z) => z.currency !== 'EUR') ? 'XOF+EUR' : 'EUR', zones };
     }
     // Cache court : une annonce activée, désactivée ou arrivée à son terme se voit en quelques secondes.
     res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=5, stale-while-revalidate=5');

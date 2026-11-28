@@ -148,6 +148,9 @@ export function campaignsOf(banners) {
       key: b.key,
       link: b.imageUrl ? (b.link === 'tap' || b.link === 'none' ? b.link : 'button') : 'button',
       accent: b.accent ?? '',
+      // Surtitre et titre réglés dans la tour ; absents, l'application les déduit du produit.
+      ...(b.kicker ? { kicker: b.kicker } : null),
+      ...(b.title ? { title: b.title } : null),
       body: b.body ?? '',
       ...(b.buttonLabel ? { cta: b.buttonLabel } : null),
       ...(b.imageUrl ? { photo: { url: b.imageUrl } } : null),

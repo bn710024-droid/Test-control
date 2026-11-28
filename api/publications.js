@@ -97,6 +97,11 @@ function validateAnnonce(src, productIds) {
   if (imageUrl && !pathOf(imageUrl)) errors.image_url = 'Image invalide : elle doit être envoyée depuis cette page.';
   const accent = imageUrl ? '' : str(src.accent);
   if (accent.length > 40) errors.accent = 'Accroche : 40 caractères au plus.';
+  // Surtitre et titre (annonce au modèle), facultatifs : vides, l'application les déduit du produit.
+  const kicker = imageUrl ? '' : str(src.kicker);
+  if (kicker.length > 40) errors.kicker = 'Surtitre : 40 caractères au plus.';
+  const title = imageUrl ? '' : str(src.title);
+  if (title.length > 40) errors.title = 'Titre : 40 caractères au plus.';
   const body = str(src.body);
   // Le modèle a toujours un produit et un bouton ; une image peut se suffire à elle-même.
   const target = validateLink(imageUrl ? src : { ...src, link: 'button', button_label: '' }, productIds, errors, 'button');
@@ -112,7 +117,7 @@ function validateAnnonce(src, productIds) {
   const endsAt = date(src.ends_at);
   if (src.ends_at && !endsAt) errors.ends_at = 'Date de fin illisible.';
   else if (endsAt && startsAt && new Date(endsAt) <= new Date(startsAt)) errors.ends_at = 'La fin doit venir après le début.';
-  return { errors, value: { ...target, accent, body, image_url: imageUrl, demo: src.demo === true, starts_at: startsAt, ends_at: endsAt } };
+  return { errors, value: { ...target, accent, ...(kicker ? { kicker } : null), ...(title ? { title } : null), body, image_url: imageUrl, demo: src.demo === true, starts_at: startsAt, ends_at: endsAt } };
 }
 
 function validatePhotos(src) {

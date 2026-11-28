@@ -21,6 +21,9 @@ type VideoData = { title: string; description: string; audience: Audience; publi
 type AnnonceData = {
   product_id: string;
   accent: string;
+  /** Surtitre et titre (annonce au modèle) ; vides, l'application les déduit du produit. */
+  kicker?: string;
+  title?: string;
   body: string;
   demo?: boolean;
   starts_at?: string | null;
@@ -775,7 +778,7 @@ function AnnonceSheet({ target, onClose, onSaved, products, byId, others }: {
   const now = useNow(15_000);
   const isNew = target === 'new';
   const current = target && target !== 'new' ? target : null;
-  const [form, setForm] = useState({ mode: 'modele' as 'modele' | 'image', link: 'button' as LinkMode, button_label: '', product_id: '', accent: '', body: '', published: true, duration: '7' as DurationChoice, until: '' });
+  const [form, setForm] = useState({ mode: 'modele' as 'modele' | 'image', link: 'button' as LinkMode, button_label: '', product_id: '', accent: '', kicker: '', title: '', body: '', published: true, duration: '7' as DurationChoice, until: '' });
   const [shot, setShot] = useState<Shot | null>(null);
   const [reading, setReading] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -791,8 +794,8 @@ function AnnonceSheet({ target, onClose, onSaved, products, byId, others }: {
     setShot(current?.data.image_url ? { key: 'en-ligne', url: current.data.image_url, width: 0, height: 0 } : null);
     setForm(
       current
-        ? { mode: current.data.image_url ? 'image' : 'modele', link: current.data.image_url ? (current.data.link ?? 'button') : 'button', button_label: current.data.button_label ?? '', product_id: current.data.product_id, accent: current.data.accent, body: current.data.body, published: current.published && !ended, duration: ended ? '7' : 'keep', until: toLocalInput(Date.now() + 7 * DAY) }
-        : { mode: 'modele', link: 'button', button_label: '', product_id: '', accent: '', body: '', published: true, duration: '7', until: toLocalInput(Date.now() + 7 * DAY) },
+        ? { mode: current.data.image_url ? 'image' : 'modele', link: current.data.image_url ? (current.data.link ?? 'button') : 'button', button_label: current.data.button_label ?? '', product_id: current.data.product_id, accent: current.data.accent, kicker: current.data.kicker ?? '', title: current.data.title ?? '', body: current.data.body, published: current.published && !ended, duration: ended ? '7' : 'keep', until: toLocalInput(Date.now() + 7 * DAY) }
+        : { mode: 'modele', link: 'button', button_label: '', product_id: '', accent: '', kicker: '', title: '', body: '', published: true, duration: '7', until: toLocalInput(Date.now() + 7 * DAY) },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
@@ -852,6 +855,8 @@ function AnnonceSheet({ target, onClose, onSaved, products, byId, others }: {
       const data = {
         product_id: hasProduct ? form.product_id : '',
         accent: withImage ? '' : form.accent,
+        kicker: withImage ? '' : form.kicker,
+        title: withImage ? '' : form.title,
         body: form.body,
         image_url,
         link: withImage ? form.link : ('button' as LinkMode),
@@ -1002,6 +1007,8 @@ function AnnonceSheet({ target, onClose, onSaved, products, byId, others }: {
                 {errors.product_id}
               </p>
             )}
+            <Field label="Surtitre" optional value={form.kicker} maxLength={40} placeholder="Campagne en cours" onValue={(v) => setForm((f) => ({ ...f, kicker: v }))} error={errors.kicker || undefined} hint="Au-dessus du titre. Vide : l’application écrit « Campagne en cours » ou « Campagne à venir · dès … »." />
+            <Field label="Titre" optional value={form.title} maxLength={40} placeholder="Nom du produit" onValue={(v) => setForm((f) => ({ ...f, title: v }))} error={errors.title || undefined} hint="Vide : le nom du produit mis en avant." />
             <Field label="Accroche" optional value={form.accent} maxLength={40} placeholder="du Sénégal" onValue={(v) => setForm((f) => ({ ...f, accent: v }))} error={errors.accent || undefined} hint="En italique, sous le nom du produit." />
             <TextArea label="Texte" value={form.body} maxLength={120} className="!min-h-[92px]" placeholder="Kent et Keitt, récoltées de mai à octobre." onValue={(v) => setForm((f) => ({ ...f, body: v }))} error={errors.body || undefined} hint={`${form.body.trim().length} / 120 · deux lignes dans le bandeau`} />
           </>

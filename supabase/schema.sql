@@ -146,6 +146,8 @@ create table if not exists carts (
 );
 alter table carts enable row level security;
 revoke all on carts from anon, authenticated;
+-- Les routes /api (clé de service) y accèdent : droit explicite, comme pour les autres tables.
+grant all on carts to service_role;
 
 -- ───────────── Sécurité par ligne — À EXÉCUTER À LA MAIN avant une mise en production.
 -- Sans politique, seule la clé de service (routes /api) accède aux tables.
