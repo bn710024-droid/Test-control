@@ -15,6 +15,10 @@ export const amount = (n: number, currency?: string | null) => {
   const code = (currency || 'EUR').toUpperCase();
   if (code === 'EUR') return euro(n);
   if (code === 'XOF' || code === 'XAF') return `${group(String(Math.round(n)))} F CFA`;
+  if (code === 'USD') {
+    const [w, c] = n.toFixed(2).split('.');
+    return `${group(w)},${c} $`;
+  }
   const [whole, cents] = n.toFixed(2).split('.');
   return `${group(whole)},${cents} ${code}`;
 };

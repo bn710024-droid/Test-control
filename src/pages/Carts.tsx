@@ -18,7 +18,7 @@ import { countryName } from '../../shared/catalog.js';
 
 const TONE: Record<CartStatusId, 'leaf' | 'star' | 'neutral'> = { actif: 'leaf', abandonne: 'star', commande: 'neutral', vide: 'neutral' };
 const WEEK = 7 * 24 * 3600 * 1000;
-const CURRENCY_NAME: Record<string, string> = { EUR: 'en euros', XOF: 'en francs CFA', XAF: 'en francs CFA' };
+const CURRENCY_NAME: Record<string, string> = { EUR: 'en euros', XOF: 'en francs CFA', XAF: 'en francs CFA', USD: 'en dollars' };
 
 /** Drapeau d'un pays (code ISO à deux lettres). */
 const flagOf = (code: string) => (/^[A-Z]{2}$/.test(code) ? String.fromCodePoint(...[...code].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : '');

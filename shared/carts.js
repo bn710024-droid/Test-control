@@ -12,6 +12,8 @@
  *  - message de relance pré-rempli (WhatsApp, appel, e-mail).
  */
 
+import { currencyOf, packVisibleIn } from './zones.js';
+
 export const CART_ACTIVE_MS = 24 * 3600 * 1000;
 export const CART_KEEP_MS = 30 * 24 * 3600 * 1000;
 export const CART_LINES_MAX = 60;
@@ -138,6 +140,15 @@ export function priceLine(doc, line, who) {
   if (!p || !p.available || !visibleIn(p.visibility, country)) return none;
 
   if (!who.pro) {
+    // Produit emballé (prix par zone) : la devise est celle du pays du COMPTE du client.
+    const raw = sub ? (p.formats ?? []).find((x) => x.id === sub) : null;
+    if (raw?.prices) {
+      const zone = who.zoneCountry || country;
+      if (!packVisibleIn(raw, zone)) return none;
+      const cur = currencyOf(zone);
+      return { known: true, name: p.name, format_label: raw.label, mode: null, unit: 'unit', noun: raw.noun ?? null, unit_price: raw.prices[cur] ?? null, currency: cur };
+    }
+    if (p.b2c === 'emballe') return none;
     if (!p.retail || p.retail.price === null) return none;
     if (sub) {
       const f = formatForCountry((p.formats ?? []).find((x) => x.id === sub), country);

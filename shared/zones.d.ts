@@ -1,0 +1,12 @@
+export type Currency = 'XOF' | 'EUR' | 'USD';
+export const XOF_COUNTRIES: string[];
+export const EUR_COUNTRIES: string[];
+export const CURRENCIES: Currency[];
+export const ZONE_LABEL: Record<Currency, string>;
+export const CURRENCY_SIGN: Record<Currency, string>;
+export function currencyOf(country: string | null | undefined): Currency;
+type PackLike = { available?: boolean; prices?: Partial<Record<Currency, number | null>>; countries?: { mode: string; list: string[] }; is_default?: boolean };
+export function packPrice(pack: PackLike | null | undefined, currency: Currency): number | null;
+export function packVisibleIn(pack: PackLike | null | undefined, country: string | null | undefined): boolean;
+export function packsFor<T extends PackLike>(packs: T[], country: string | null | undefined): T[];
+export function priceAlerts(prices: Partial<Record<Currency, number | null>> | null | undefined): string[];

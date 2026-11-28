@@ -1,3 +1,4 @@
+import { CURRENCIES, CURRENCY_SIGN } from './zones.js';
 /**
  * Règles communes à l'administration (navigateur) et à ses routes serveur.
  *
@@ -29,7 +30,7 @@ export const LIMITS = {
  */
 export const PACK_CURRENCIES = ['EUR', 'XOF'];
 /** Plafond d'un prix d'emballage par devise (le franc CFA s'écrit sans centimes, en milliers). */
-const PACK_PRICE_MAX = { EUR: 10000, XOF: 10000000 };
+const PACK_PRICE_MAX = { EUR: 10000, XOF: 10000000, USD: 10000 };
 
 export const DEFAULT_RULES = {
   standard: { minKg: 500, stepKg: 100, maxKg: 100000 },
@@ -277,7 +278,8 @@ function offerToDoc(o) {
 }
 
 function retailToDoc(r) {
-  if (!r || typeof r !== 'object') return null;
+  // Emballé (vendu par ses emballages) ou désactivé pour les particuliers : aucun prix au kilo publié.
+  if (!r || typeof r !== 'object' || r.kind === 'emballe' || r.active === false) return null;
   const unit = r.unit === 'unit' ? 'unit' : 'kg';
   const out = {
     price: positive(r.price),
@@ -314,6 +316,8 @@ export function productToDoc(row) {
     rating: Number(row.rating) || 0,
     reviews: Number(row.reviews) || 0,
     retail: retailToDoc(row.retail),
+    // Particuliers : 'emballe' = vendu uniquement par ses emballages ; 'frais' = au kilo ou à la pièce.
+    b2c: isPacked(row.retail) ? 'emballe' : 'frais',
     wholesale: (Array.isArray(row.wholesale) ? row.wholesale : []).map(offerToDoc),
   };
 }
@@ -710,7 +714,18 @@ export function validatePackagings(input) {
       else if (unit === 'piece' && !Number.isInteger(p.qty)) errors[`${at}.qty`] = 'Contenu en pièces : un nombre entier.';
       else qty = Math.round(p.qty * 1000) / 1000;
     }
-    const price = money(p.price, `${at}.price`, errors, 'Prix d’un emballage', LIMITS.retailPrice);
+    // Prix de l'emballage ENTIER dans chaque devise ; case vide = non vendu dans cette zone.
+    // (Ancien format : `price` seul = prix en euros.)
+    const rawPrices = p.prices && typeof p.prices === 'object' ? p.prices : { EUR: p.price };
+    const prices = {};
+    for (const cur of CURRENCIES) {
+      const v = money(rawPrices[cur], `${at}.prices.${cur}`, errors, `Prix en ${CURRENCY_SIGN[cur]}`, PACK_PRICE_MAX[cur]);
+      if (v !== null && cur === 'XOF' && !Number.isInteger(v)) errors[`${at}.prices.${cur}`] = 'Prix en F CFA : un nombre entier, sans centimes.';
+      prices[cur] = v;
+    }
+    if (p.available !== false && CURRENCIES.every((c) => prices[c] === null) && !CURRENCIES.some((c) => errors[`${at}.prices.${c}`])) {
+      errors[`${at}.prices`] = 'Indiquez au moins un prix (F CFA, € ou $) : sans prix, l’emballage n’est vendu nulle part.';
+    }
     // Photo de l'emballage : celle de tous les pays, sauf ceux qui ont la leur.
     const photoOf = (v, path) => {
       if (empty(v)) return null;
@@ -726,33 +741,12 @@ export function validatePackagings(input) {
     const description = String(p.description ?? '').trim().replace(/\s+/g, ' ');
     if (description.length > PACK_DESCRIPTION_MAX) errors[`${at}.description`] = `Description de l’emballage : ${PACK_DESCRIPTION_MAX} caractères au plus.`;
 
-    // Réglages par pays : proposé ou non ; au prix d'origine, ou à un prix propre à ces pays.
-    const ruleList = Array.isArray(p.countryRules) ? p.countryRules : [];
-    if (ruleList.length > COUNTRY_PRICE_LIMIT) errors[`${at}.countryRules`] = `${COUNTRY_PRICE_LIMIT} réglages par pays au plus.`;
-    const taken = new Set();
-    const countryRules = ruleList.slice(0, COUNTRY_PRICE_LIMIT).map((g, j) => {
-      const base = `${at}.countryRules.${j}`;
-      const countries = groupCountries(g?.countries, base, errors, taken, 'réglage');
-      const available = g?.available !== false;
-      // `own` : « prix propre » choisi à l'écran — le prix est alors obligatoire. Sinon : prix d'origine.
-      const own = available && (g?.own === true || (g?.own === undefined && !empty(g?.price)));
-      const currency = own && g?.currency === 'XOF' ? 'XOF' : 'EUR';
-      const own_price = own ? money(g?.price, `${base}.price`, errors, 'Prix de l’emballage dans ces pays', PACK_PRICE_MAX[currency]) : null;
-      if (own_price !== null && currency === 'XOF' && !Number.isInteger(own_price)) {
-        errors[`${base}.price`] = 'Prix en francs CFA : un nombre entier, sans centimes.';
-      }
-      if (own && own_price === null && !errors[`${base}.price`]) {
-        errors[`${base}.price`] = 'Indiquez le prix de cet emballage dans ces pays, ou choisissez « Prix d’origine ».';
-      }
-      // Photo : la même que l'emballage d'origine, ou une photo propre à ces pays (alors obligatoire).
-      const ownPhoto = available && (g?.ownPhoto === true || (g?.ownPhoto === undefined && !empty(g?.photo_url)));
-      const own_photo = ownPhoto ? photoOf(g?.photo_url, `${base}.photo_url`) : null;
-      if (ownPhoto && own_photo === null && !errors[`${base}.photo_url`]) {
-        errors[`${base}.photo_url`] = 'Ajoutez la photo de l’emballage pour ces pays, ou choisissez « Même photo ».';
-      }
-      // La devise n'est rangée que pour un prix propre en francs CFA : l'euro reste implicite.
-      return { countries, available, price: own_price, ...(own_price !== null && currency !== 'EUR' ? { currency } : null), photo_url: own_photo };
-    });
+    // Photo « produit dans l'emballage » : le grand aperçu de la fiche quand le client le choisit.
+    const preview_url = photoOf(p.preview_url, `${at}.preview_url`);
+    // Pays : toutes les zones où il a un prix, seulement ces pays, ou sauf ces pays.
+    const mode = ['zone', 'pays', 'sauf'].includes(p.countries?.mode) ? p.countries.mode : 'zone';
+    const list = mode === 'zone' ? [] : codesOf(p.countries?.list).slice(0, 80);
+    if (mode !== 'zone' && list.length === 0) errors[`${at}.countries`] = 'Choisissez au moins un pays, ou « Toutes les zones avec un prix ».';
 
     // Nombre d'emballages commandés : des emballages entiers.
     const count = (v, key, name) => {
@@ -789,18 +783,27 @@ export function validatePackagings(input) {
       label,
       qty,
       unit,
-      price,
+      // Compatibilité (offres pros, anciennes lectures) : le prix en euros.
+      price: prices.EUR,
       step,
       min,
       max,
       audience: PACK_AUDIENCES.includes(p.audience) ? p.audience : 'tous',
       available: p.available !== false,
       photo_url,
+      preview_url,
       description,
-      // La clé n'existe que s'il y a des réglages par pays.
-      ...(countryRules.length > 0 ? { countryRules } : null),
+      prices,
+      countries: { mode, list },
+      is_default: p.is_default === true,
     };
   });
+  // Un seul emballage « par défaut » : le premier coché.
+  let seenDefault = false;
+  for (const k of value) {
+    if (k.is_default && seenDefault) k.is_default = false;
+    if (k.is_default) seenDefault = true;
+  }
   return { errors, value };
 }
 
@@ -863,7 +866,25 @@ function quantity(v, path, errors, label, max, unit) {
   return v;
 }
 
+/**
+ * Offre particuliers. `kind` : 'frais' (vendu au kilo ou à la pièce) ou 'emballe' (vendu
+ * uniquement par ses emballages). `active: false` : « Pour les particuliers » désactivé — les
+ * valeurs restent enregistrées, rien n'est effacé. Emballé ou désactivé : le bloc est masqué à
+ * l'écran, ses valeurs sont gardées telles quelles, sans erreur.
+ */
 function validateRetail(input, errors) {
+  if (input === null || input === undefined) return null;
+  if (typeof input !== 'object') return validateRetailCore(input, errors);
+  const kind = input.kind === 'emballe' ? 'emballe' : 'frais';
+  const active = input.active !== false;
+  const out = validateRetailCore(input, kind === 'frais' && active ? errors : {});
+  return out ? { ...out, kind, active } : null;
+}
+
+/** Produit vendu aux particuliers uniquement par ses emballages. */
+export const isPacked = (retail) => retail?.kind === 'emballe';
+
+function validateRetailCore(input, errors) {
   if (input === null || input === undefined) return null;
   if (typeof input !== 'object') {
     errors['retail.price'] = 'Offre particuliers illisible.';

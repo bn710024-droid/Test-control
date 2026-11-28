@@ -15,6 +15,7 @@
  * sans relire la base.
  */
 import { packContent, packRange } from './catalog.js';
+import { XOF_COUNTRIES, EUR_COUNTRIES } from './zones.js';
 
 export const SCHEMA_V2 = 2;
 
@@ -113,10 +114,21 @@ export function formatOf(pack, productId) {
     min: range.min,
     ...(range.max !== null ? { max: range.max } : null),
     available: pack.available !== false,
+    // Prix de l'emballage entier par devise (F CFA, €, $) : `null` = non vendu dans cette zone.
+    prices: pack.prices ?? { XOF: null, EUR: typeof pack.price === 'number' && pack.price > 0 ? pack.price : null, USD: null },
+    // Pays : 'zone' (toutes les zones avec un prix), 'pays' (seulement ces pays), 'sauf' (sauf ces pays).
+    countries: pack.countries ?? { mode: 'zone', list: [] },
+    isDefault: pack.is_default === true,
+    // Photo de l'emballage seul, et du produit dans l'emballage (grand aperçu de la fiche).
     ...(pack.photo_url
       ? { photo: { url: pack.photo_url } }
       : productId
-        ? { photo: { asset: `format:${productId}:${pack.id}` }, preview: { asset: `preview:${productId}:${pack.id}` } }
+        ? { photo: { asset: `format:${productId}:${pack.id}` } }
+        : null),
+    ...(pack.preview_url
+      ? { preview: { url: pack.preview_url } }
+      : productId && !pack.photo_url
+        ? { preview: { asset: `preview:${productId}:${pack.id}` } }
         : null),
     visibility: { mode: 'monde', countries: [] },
     ...(settings.length > 0 ? { settings } : null),
@@ -206,6 +218,8 @@ export function toAppDocument(v1, { demoIds = new Set(), gp = [] } = {}) {
     products: (v1.products ?? []).map((p) => productOf(p, demoIds)),
     campaigns: campaignsOf(v1.banners),
     delivery: { gp },
+    // Devises des particuliers par pays : franc CFA, euro, sinon dollar (shared/zones.js).
+    zones: { XOF: XOF_COUNTRIES, EUR: EUR_COUNTRIES, fallback: 'USD' },
     categories: categoriesOf(v1.categories, v1.products),
     filters: filtersOf(v1.filters),
     payments: (v1.payments ?? []).map((p) => ({ ...p, enabled: true })),

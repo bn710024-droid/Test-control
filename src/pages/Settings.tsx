@@ -23,8 +23,8 @@ import { ago, initials, kgText, numStr, parseNum, plural } from '../lib/format';
 import { cx } from '../lib/ui';
 import { DEFAULT_RULES, parseCatalog, validateRules, type Errors, type QuantityRules } from '../../shared/catalog.js';
 import { PAYMENT_METHODS, paymentStates } from '../../shared/payments.js';
-import { CFA_ZONES, TRANSPORT_ZONES, transportZonesOf, validateTransport, type TransportZone } from '../../shared/transport.js';
-import { Choice } from '../components/CountryPrices';
+import { TRANSPORT_ZONES, transportZonesOf, validateTransport, type TransportZone } from '../../shared/transport.js';
+import { CURRENCIES, CURRENCY_SIGN, ZONE_LABEL } from '../../shared/zones.js';
 
 type Member = { user_id: string; email: string; provider: string; role: 'owner' | 'editor' | 'pending'; since: string | null };
 type Credit = { id: string; title: string; artist: string; license: string; url: string };
@@ -151,8 +151,8 @@ export default function Settings() {
     />
   );
 
-  // ───── Forfait transport des particuliers (en euros, par zone de destination)
-  const feesToForm = (zones: TransportZone[]) => Object.fromEntries(zones.flatMap((z) => [[z.id, numStr(z.fee)], [`${z.id}:devise`, z.currency]]));
+  // ───── Forfait transport des particuliers : par zone de destination, un montant par devise de client
+  const feesToForm = (zones: TransportZone[]) => Object.fromEntries(zones.flatMap((z) => CURRENCIES.map((c) => [`${z.id}.${c}`, numStr(z.fees[c])])));
   const storedFees = transportZonesOf(settings?.transport);
   const feesKey = JSON.stringify(storedFees);
   const [fees, setFees] = useState<Record<string, string>>(() => feesToForm(storedFees));
@@ -164,12 +164,7 @@ export default function Settings() {
   const feesDirty = JSON.stringify(fees) !== JSON.stringify(feesToForm(storedFees));
 
   const submitFees = async () => {
-    const asked = Object.fromEntries(
-      TRANSPORT_ZONES.map((z) => {
-        const fee = parseNum(fees[z.id] ?? '');
-        return [z.id, fees[`${z.id}:devise`] === 'XOF' && fee !== null ? { fee, currency: 'XOF' } : fee];
-      }),
-    );
+    const asked = Object.fromEntries(TRANSPORT_ZONES.map((z) => [z.id, Object.fromEntries(CURRENCIES.map((c) => [c, parseNum(fees[`${z.id}.${c}`] ?? '')]))]));
     const { errors, value } = validateTransport(asked);
     setFeeErrors(errors);
     if (Object.keys(errors).length > 0) {
@@ -573,47 +568,37 @@ export default function Settings() {
             {/* ───── Transport des particuliers */}
             <Block id="transport" title="Transport des particuliers">
               <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
-                Forfait ajouté à une commande « avec transport », selon le pays de livraison, au départ du Sénégal. Montants en euros
-                (en francs CFA possible pour le Sénégal et l’Afrique de l’Ouest), publiés dans le catalogue.{!settings?.transport && ' Barème d’exemple tant qu’il n’a pas été enregistré : remplacez-le par vos tarifs.'}
-                {!isOwner && ' Seul un responsable peut les modifier.'}
+                Forfait ajouté à une commande « avec transport », selon le pays de livraison. Le client paie dans la devise de son pays : un
+                montant par devise, case vide = tarif à confirmer.{!isOwner && ' Seul un responsable peut les modifier.'}
               </p>
-              <div className="mt-3 grid grid-cols-2 gap-2.5">
-                {TRANSPORT_ZONES.map((z) => (
-                  <Field
-                    key={z.id}
-                    label={z.label}
-                    compact
-                    inputMode="decimal"
-                    suffix={fees[`${z.id}:devise`] === 'XOF' ? 'F CFA' : '€'}
-                    disabled={!isOwner}
-                    value={fees[z.id] ?? ''}
-                    onValue={(v) => {
-                      setFees((f) => ({ ...f, [z.id]: v }));
-                      setFeeErrors((e) => (e[z.id] ? { ...e, [z.id]: '' } : e));
-                    }}
-                    error={feeErrors[z.id] || undefined}
-                    className="pr-[64px]"
-                  />
-                ))}
-              </div>
-              {/* Zones du franc CFA : le forfait peut être dans la même devise que les prix de ces pays. */}
-              {CFA_ZONES.map((id) => {
-                const zone = TRANSPORT_ZONES.find((z) => z.id === id)!;
-                return (
-                  <div key={id}>
-                    <p className="mb-[7px] mt-3.5 text-[13px] font-semibold text-fg-dim">Devise du forfait · {zone.label}</p>
-                    <Choice
-                      label={`Devise du forfait de transport · ${zone.label}`}
-                      value={fees[`${id}:devise`] === 'XOF' ? 'XOF' : 'EUR'}
-                      onChange={(c) => isOwner && setFees((f) => ({ ...f, [`${id}:devise`]: c }))}
-                      options={[
-                        ['EUR', 'Euro (€)'],
-                        ['XOF', 'Franc CFA'],
-                      ]}
-                    />
+              {TRANSPORT_ZONES.map((z) => (
+                <div key={z.id} className="mt-3.5 border-t border-line pt-1">
+                  <p className="mt-2.5 text-[14.5px] font-bold leading-5">Vers {z.label}</p>
+                  <div className="grid grid-cols-3 gap-2.5">
+                    {CURRENCIES.map((c) => {
+                      const key = `${z.id}.${c}`;
+                      return (
+                        <Field
+                          key={key}
+                          label={ZONE_LABEL[c]}
+                          compact
+                          inputMode={c === 'XOF' ? 'numeric' : 'decimal'}
+                          suffix={CURRENCY_SIGN[c]}
+                          disabled={!isOwner}
+                          placeholder="—"
+                          value={fees[key] ?? ''}
+                          onValue={(v) => {
+                            setFees((f) => ({ ...f, [key]: v }));
+                            setFeeErrors((e) => (e[key] ? { ...e, [key]: '' } : e));
+                          }}
+                          error={feeErrors[key] || undefined}
+                          className="pr-[64px]"
+                        />
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </div>
+              ))}
               {isOwner && (
                 <div className="mt-5 flex flex-wrap items-center gap-2.5">
                   <PrimaryButton className="!w-auto min-w-[200px] flex-1" label="Enregistrer les forfaits" disabled={!feesDirty && !!settings?.transport} loading={savingFees} onClick={submitFees} />

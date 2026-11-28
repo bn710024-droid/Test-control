@@ -96,7 +96,7 @@ export async function receiveCart(req, body, res, { loadOrders }) {
 
     // Prix recalculés d'après le catalogue publié : jamais ceux envoyés par l'appareil.
     const pro = v.account.type === 'pro';
-    const who = { country: v.country || v.account.country, pro, modes: pro && (v.account.activity === 'grossiste' || v.account.activity === 'importateur'), incoterm: v.incoterm };
+    const who = { country: v.country || v.account.country, zoneCountry: v.account.country || v.country, pro, modes: pro && (v.account.activity === 'grossiste' || v.account.activity === 'importateur'), incoterm: v.incoterm };
     const priced = priceCart(await loadAppDocument(), v.lines, who);
     // Un nouveau panier après une commande repart de zéro (relances comprises).
     const fresh = !before || before.status === 'commande';

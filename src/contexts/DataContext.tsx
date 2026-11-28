@@ -33,8 +33,8 @@ export type Settings = {
   missing: RequestMessage | null;
   /** Moyens de paiement activés (`{ orange_money: true, … }`). `null` : jamais réglé, tous activés. */
   payments: Record<string, boolean> | null;
-  /** Forfaits de transport par zone, en euros (`{ sn: 6, … }`). `null` : jamais réglés. */
-  transport: Record<string, number | { fee: number; currency: 'EUR' | 'XOF' }> | null;
+  /** Forfaits de transport par zone et par devise de client. `null` : jamais réglés. */
+  transport: Record<string, unknown> | null;
   updated: Record<string, string>;
   seals: Record<string, Seal>;
 };
@@ -84,7 +84,7 @@ type DataValue = {
   saveRules: (rules: unknown) => Promise<void>;
   saveLink: (link: { appLinked: boolean; note: string }) => Promise<void>;
   savePayments: (payments: Record<string, boolean>) => Promise<void>;
-  saveTransport: (fees: Record<string, number | { fee: number; currency: 'EUR' | 'XOF' }>) => Promise<void>;
+  saveTransport: (fees: Record<string, { XOF: number | null; EUR: number | null; USD: number | null }>) => Promise<void>;
   saveFilters: (filters: Record<HomeFilterId, HomeFilter>) => Promise<void>;
   saveRequestMessage: (message: RequestMessage) => Promise<void>;
   sealRefs: (refs: string[]) => Promise<{ sealed: string[]; refused: { ref: string; error: string }[] }>;

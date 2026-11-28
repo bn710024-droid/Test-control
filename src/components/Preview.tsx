@@ -7,6 +7,7 @@ import { CategoryRound, ProductArt, SeasonStrip } from './catalog';
 import { Segmented } from './ui';
 import { MONTHS, amount, currentMonth, euro, isAllYear, isInSeason, nextSeasonStart } from '../lib/format';
 import { cx, glow } from '../lib/ui';
+import { currencyOf, packPrice, packsFor } from '../../shared/zones.js';
 import { countryName, packContent, packCountryRules, packFor, packRange, packRuleText, packTotal, zoneAllows, zoneLabel, type PackAudience, type Packaging, type Zone } from '../../shared/catalog.js';
 
 // ───────────── Atelier : une configuration prend tout l'écran, l'aperçu client à côté
@@ -376,6 +377,8 @@ export type PreviewProduct = {
   /** Règle de quantité de la vente au détail (le prix global), ou null : non vendu aux particuliers. */
   retail?: { unit: 'kg' | 'unit'; step: number; min: number | null; max: number | null; noun: [string, string] } | null;
   packs: Packaging[];
+  /** Particuliers : 'emballe' (vendu par ses emballages, prix par zone) ou 'frais'. */
+  kind?: 'emballe' | 'frais';
   /** Pays où le produit s'affiche. */
   zone?: Zone;
 };
@@ -405,10 +408,15 @@ export function ProductPreview({ product: raw, focusPack }: { product: PreviewPr
       ...raw.packs.flatMap((k) => packCountryRules(k).flatMap((g) => g.countries)),
     ]),
   ];
-  const here = priced.includes(from) ? from : '';
-  const own = here && audience === 'particuliers' ? (raw.countryPrices ?? []).find((g) => g.countries.includes(here)) : undefined;
+  // Produit emballé : vu depuis l'un de ces pays, dans sa devise, sur l'emballage par défaut de ce pays.
+  const packed = raw.kind === 'emballe' && audience === 'particuliers';
+  const views = ['SN', 'CI', 'FR', 'US', 'MA'];
+  const here = packed ? (views.includes(from) ? from : 'SN') : priced.includes(from) ? from : '';
+  const own = here && !packed && audience === 'particuliers' ? (raw.countryPrices ?? []).find((g) => g.countries.includes(here)) : undefined;
   // Vu de ce pays : son prix, et seuls les emballages qui y sont proposés, chacun à son prix dans ce pays.
-  const p = { ...raw, price: own ? own.price : raw.price, packs: raw.packs.flatMap((k) => packFor(k, here) ?? []) };
+  const p = packed
+    ? { ...raw, price: null, retail: null, packs: packsFor(raw.packs, here).map((k) => ({ ...k, price: packPrice(k, currencyOf(here)), currency: currencyOf(here) as Packaging['currency'] })) }
+    : { ...raw, price: own ? own.price : raw.price, packs: raw.packs.flatMap((k) => packFor(k, here) ?? []) };
   // Afficher le produit dans un pays est un autre réglage : s'il ne l'est pas, ce client ne voit pas la fiche.
   const notShownHere = !!here && !!raw.zone && !zoneAllows(raw.zone, here);
   const packs = p.packs.filter((k) => forAudience(k, audience));
@@ -416,7 +424,7 @@ export function ProductPreview({ product: raw, focusPack }: { product: PreviewPr
   useEffect(() => {
     if (focusPack) setPicked(focusPack);
   }, [focusPack]);
-  const chosen = packs.find((k) => k.id === picked) ?? null;
+  const chosen = packs.find((k) => k.id === picked) ?? (packed ? (packs[0] ?? null) : null);
   const retail = audience === 'particuliers' ? (p.retail ?? null) : null;
 
   // Nombre d'emballages choisi dans l'aperçu : toujours ramené dans la règle de l'emballage.
@@ -494,11 +502,11 @@ export function ProductPreview({ product: raw, focusPack }: { product: PreviewPr
           ]}
         />
       </div>
-      {priced.length > 0 && (
+      {(packed || priced.length > 0) && (
         <div className="mx-auto mb-4 max-w-[340px]" data-apercu="pays">
           <p className="label-voice mb-2 text-center text-[12px] text-fg-faint">Vu depuis</p>
           <div className="flex flex-wrap justify-center gap-2" role="radiogroup" aria-label="Pays du client simulé">
-            {['', ...priced].map((code) => {
+            {(packed ? views : ['', ...priced]).map((code) => {
               const on = here === code;
               return (
                 <button
@@ -506,7 +514,10 @@ export function ProductPreview({ product: raw, focusPack }: { product: PreviewPr
                   type="button"
                   role="radio"
                   aria-checked={on}
-                  onClick={() => setFrom(code)}
+                  onClick={() => {
+                    setFrom(code);
+                    setPicked(null);
+                  }}
                   className={cx('press flex h-11 items-center rounded-full border px-4 text-[13px] transition-colors duration-200', on ? 'border-leaf bg-leaf font-extrabold text-on-leaf' : 'border-line bg-surface font-bold text-fg-dim')}
                 >
                   {code ? countryName(code) : 'Autres pays'}
@@ -520,6 +531,10 @@ export function ProductPreview({ product: raw, focusPack }: { product: PreviewPr
         caption={
           !p.available
             ? 'Produit non commercialisé : les clients ne voient pas cette fiche pour l’instant.'
+            : packed
+              ? packs.length === 0
+                ? `${countryName(here)} : aucun emballage n’y est vendu (pas de prix dans cette zone), le client ne voit pas ce produit.`
+                : `${countryName(here)} : ouvert sur « ${packs[0].label} », ${packs[0].price !== null ? amount(packs[0].price, currencyOf(here)) : 'prix à confirmer'}.`
             : notShownHere
               ? `${countryName(here)} : le produit n’y est pas affiché (rubrique « Pays »), ce client ne voit donc pas cette fiche. Voici ce qu’il verra dès que vous l’y afficherez : les réglages de ce pays sont gardés.`
             : here && hiddenCount > 0

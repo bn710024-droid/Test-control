@@ -92,7 +92,7 @@ export function RuleRow({ title, summary, chips, extra, onEdit, editLabel, editT
 const ALL = COUNTRY_CODES.map((code) => ({ code, name: countryName(code), key: normalize(countryName(code)) })).sort((a, b) => a.name.localeCompare(b.name, 'fr'));
 
 /** Les pays d'un groupe : ceux déjà choisis, et une recherche pour en ajouter. */
-function CountryList({ countries, taken, onChange, label, disabled, noun }: {
+export function CountryList({ countries, taken, onChange, label, disabled, noun }: {
   /** « prix » ou « réglage » : ce que l'on attribue à ces pays. */
   noun: string;
   countries: string[];
