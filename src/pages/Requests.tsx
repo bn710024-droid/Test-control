@@ -23,6 +23,7 @@ import {
   type RequestMessageKey,
   type RequestStatus,
 } from '../../shared/requests.js';
+import { sp } from '../lib/space';
 
 // ───────────── Produits introuvables
 // Un client a cherché un produit qui n'est pas au catalogue et nous l'a demandé. Cet écran réunit
@@ -391,7 +392,7 @@ function RequestSheet({ request: r, onClose, onChanged, onRemoved, thanks }: {
           />
 
           <div className="mt-4 flex flex-wrap gap-2.5">
-            <Link to={`/produits/nouveau?nom=${encodeURIComponent(r.product)}`} className={cx(contactLink, 'border-leaf/50 text-leaf')}>
+            <Link to={sp(`/produits/nouveau?nom=${encodeURIComponent(r.product)}`)} className={cx(contactLink, 'border-leaf/50 text-leaf')}>
               Créer la fiche de ce produit
             </Link>
             {isOwner && <GhostButton compact tone="danger" label={sure ? 'Confirmer la suppression' : 'Supprimer la demande'} disabled={busy} onClick={() => (sure ? remove() : setSure(true))} />}

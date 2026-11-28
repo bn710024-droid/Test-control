@@ -25,6 +25,8 @@ import { DEFAULT_RULES, parseCatalog, validateRules, type Errors, type QuantityR
 import { PAYMENT_METHODS, paymentStates } from '../../shared/payments.js';
 import { TRANSPORT_ZONES, transportZonesOf, validateTransport, type TransportZone } from '../../shared/transport.js';
 import { CURRENCIES, CURRENCY_SIGN, ZONE_LABEL } from '../../shared/zones.js';
+import { useSpace } from '../lib/space';
+import { ProTermsBlock } from '../components/ProTermsBlock';
 
 type Member = { user_id: string; email: string; provider: string; role: 'owner' | 'editor' | 'pending'; since: string | null };
 type Credit = { id: string; title: string; artist: string; license: string; url: string };
@@ -91,6 +93,7 @@ export default function Settings() {
   const { user, access, isOwner, canEdit, signOut } = useAuth();
   const navigate = useNavigate();
   const { products, settings, loading, error, reload, pendingRefs, saveRules, saveLink, savePayments, saveTransport, sealRefs } = useData();
+  const { space } = useSpace();
   const toast = useToast();
   const [params] = useSearchParams();
   const provider = access.status === 'ready' ? access.provider : 'email';
@@ -360,7 +363,7 @@ export default function Settings() {
 
   return (
     <Page>
-      <PageHeader title="Réglages" subtitle="Compte, publication, règles des offres et accès de l’équipe." />
+      <PageHeader title="Réglages" subtitle={space === 'b2b' ? 'Espace Pros : règles des offres, conditions et logistique. Équipe et accès : communs.' : 'Espace Particuliers : paiement et transport. Équipe et accès : communs.'} />
 
       {/* ───── Compte */}
       <section className="card mx-5 flex items-center gap-3.5 p-4" aria-label="Mon compte">
@@ -534,6 +537,7 @@ export default function Settings() {
 
           <div className="min-w-0">
             {/* ───── Moyens de paiement */}
+            {space === 'b2c' && (<>
             <Block id="paiements" title="Moyens de paiement">
               <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
                 Moyens proposés aux particuliers à la validation de commande, publiés dans le catalogue. Aucun n’est encaissé par
@@ -608,8 +612,15 @@ export default function Settings() {
               {feesDirty && <p className="mt-2.5 text-center text-[12.5px] font-semibold text-star" role="status">Modifications non enregistrées</p>}
             </Block>
 
+            </>)}
+
+            {space === 'b2b' && (<>
+            <Block id="conditions" title="Conditions et logistique par défaut">
+              <ProTermsBlock />
+            </Block>
+
             {/* ───── Règles de quantité */}
-            <Block id="regles" title="Règles des offres pro">
+            <Block id="regles" title="Règles avion, bateau et standard">
               <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
                 Règles générales, publiées dans le catalogue. Une offre peut avoir ses propres valeurs, réglées dans la fiche du produit.
                 {!isOwner && ' Seul un responsable peut les modifier.'}
@@ -667,7 +678,9 @@ export default function Settings() {
               {rulesDirty && <p className="mt-2.5 text-center text-[12.5px] font-semibold text-star" role="status">Modifications non enregistrées</p>}
             </Block>
 
-            {/* ───── Équipe */}
+            </>)}
+
+            {/* ───── Équipe (commun aux deux espaces) */}
             {isOwner && (
               <Block id="equipe" title="Équipe et accès" aside={pendingMembers.length > 0 ? <Chip tone="star">{plural(pendingMembers.length, 'demande', 'demandes')}</Chip> : undefined}>
                 <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">

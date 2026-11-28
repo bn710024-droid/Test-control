@@ -35,9 +35,12 @@ export type Settings = {
   payments: Record<string, boolean> | null;
   /** Forfaits de transport par zone et par devise de client. `null` : jamais réglés. */
   transport: Record<string, unknown> | null;
+  /** Espace Pros : conditions de paiement et logistique par défaut (pré-remplies dans les fiches). */
+  terms: ProTerms | null;
   updated: Record<string, string>;
   seals: Record<string, Seal>;
 };
+export type ProTerms = { terms: string; port: string; airport: string; station: string };
 export type Activity = {
   id: number;
   at: string;
@@ -87,6 +90,7 @@ type DataValue = {
   saveTransport: (fees: Record<string, { XOF: number | null; EUR: number | null; USD: number | null }>) => Promise<void>;
   saveFilters: (filters: Record<HomeFilterId, HomeFilter>) => Promise<void>;
   saveRequestMessage: (message: RequestMessage) => Promise<void>;
+  saveTerms: (terms: ProTerms) => Promise<void>;
   sealRefs: (refs: string[]) => Promise<{ sealed: string[]; refused: { ref: string; error: string }[] }>;
   uploadImage: (kind: 'products' | 'categories' | 'packagings', id: string, blob: Blob) => Promise<string>;
 };
@@ -316,6 +320,11 @@ export function DataProvider({ children }: { children: ReactNode }) {
     saveRequestMessage: async (message) => {
       guard();
       await api('/api/settings', { method: 'PUT', body: { key: 'missing', value: message } });
+      await refresh();
+    },
+    saveTerms: async (terms) => {
+      guard();
+      await api('/api/settings', { method: 'PUT', body: { key: 'terms', value: terms } });
       await refresh();
     },
     saveLink: async (link) => {

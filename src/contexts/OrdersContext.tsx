@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { ApiError, api, messageOf } from '../lib/api';
+import { apiSpace } from '../lib/space';
 import { useAuth } from './AuthContext';
 import type { CartStatusId, ContactWay } from '../../shared/carts.js';
 
@@ -22,6 +23,19 @@ export type Order = {
   id: string;
   received_at: string;
   type: 'particulier' | 'pro';
+  /** Programme d'un acheteur pro (quantité étalée dans le temps), sinon une demande ou commande. */
+  kind?: 'programme';
+  programme?: {
+    calibres: string[];
+    packaging: string;
+    quantity: number;
+    unit: 'kg' | 'tonnes' | 'conteneurs';
+    start: string;
+    end: string | null;
+    frequency: 'hebdomadaire' | 'mensuelle' | 'ponctuelle';
+    destination: { country: string; place: string };
+    details: string;
+  };
   number: string;
   created_at: string;
   /** Vrai : commande fictive, pour visualiser l'espace. */
@@ -162,12 +176,15 @@ export function OrdersProvider({ children }: { children: ReactNode }) {
       ]);
       if (!alive.current) return;
       if (Array.isArray(cartData.carts)) {
-        setCarts(cartData.carts);
+        // Paniers en cours : ceux des particuliers (l'espace Pros n'a pas de paniers).
+        setCarts(cartData.carts.filter((c) => c.account?.type !== 'pro'));
         setCartsError(null);
       } else if (!quiet) {
         setCartsError('error' in cartData ? String(cartData.error) : 'Paniers indisponibles.');
       }
-      setOrders([...data.orders].sort((a, b) => b.created_at.localeCompare(a.created_at)));
+      // Deux espaces : Particuliers = commandes ; Pros = demandes et programmes. Jamais mélangés.
+      const pro = apiSpace() === 'b2b';
+      setOrders(data.orders.filter((o) => (o.type === 'pro') === pro).sort((a, b) => b.created_at.localeCompare(a.created_at)));
       setScope(data.scope);
       setLogistics(data.logistics ?? null);
       setLoadedAt(Date.now());

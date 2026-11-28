@@ -3,14 +3,11 @@ import { createPortal } from 'react-dom';
 import { Reorder } from 'framer-motion';
 import { useBlocker, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
-  airplaneOutline,
   archiveOutline,
   arrowBack,
   arrowUndoOutline,
-  boatOutline,
   cameraOutline,
   checkmarkCircle,
-  cubeOutline,
   ellipsisHorizontal,
   leafOutline,
   shieldCheckmarkOutline,
@@ -24,10 +21,9 @@ import { useToast } from '../contexts/ToastContext';
 import { Icon } from '../components/Icon';
 import { CardPreview, CategoryRound, ProductArt, SeasonStrip } from '../components/catalog';
 import { embeddedAssetsOf } from '../../shared/assets.js';
-import { OfferCard } from '../components/OfferCard';
 import { NewCategorySheet } from '../components/NewCategorySheet';
 import { ZonePicker } from '../components/ZonePicker';
-import { AUDIENCE_TEXT, BenchContext, ProductPreview, Workbench, useBench } from '../components/Preview';
+import { BenchContext, ProductPreview, Workbench, useBench } from '../components/Preview';
 import {
   Chip,
   ConfirmSheet,
@@ -49,7 +45,7 @@ import {
 import { ApiError, messageOf } from '../lib/api';
 import { ago, amount, euro, parseNum, plural, seasonText, unitTiny } from '../lib/format';
 import { prepareImage, type Prepared } from '../lib/image';
-import { newOffer, newPack, newRetailGroup, packInput, toForm, toInput, type Form, type OfferForm, type PackForm } from '../lib/productForm';
+import { newPack, newRetailGroup, packInput, toForm, toInput, type Form, type PackForm } from '../lib/productForm';
 import { Choice, CountryList, CountryPrices, RuleRow } from '../components/CountryPrices';
 import { CURRENCIES, CURRENCY_SIGN, ZONE_LABEL, priceAlerts } from '../../shared/zones.js';
 import { countryName } from '../../shared/catalog.js';
@@ -60,14 +56,11 @@ import {
   DEFAULT_RULES,
   PACK_DESCRIPTION_MAX,
   PACK_LIMIT,
-  globalScope,
   isKiloLabel,
   packContent,
   packRange,
   packRuleText,
   packTotal,
-  packPriceAlert,
-  packUnitPrice,
   pieceLabel,
   slugify,
   validatePackagings,
@@ -75,10 +68,11 @@ import {
   zoneLabel,
   validateProduct,
   type Errors,
-  type Mode,
   type Zone,
   type ProductInput,
 } from '../../shared/catalog.js';
+import { sp, useSpace } from '../lib/space';
+import ProEditor from './ProEditor';
 
 const BENCH_TITLE: Record<string, string> = {
   identite: 'Identité',
@@ -86,7 +80,6 @@ const BENCH_TITLE: Record<string, string> = {
   particuliers: 'Prix particuliers',
   emballages: 'Emballages',
   disponibilite: 'Disponibilité',
-  professionnels: 'Prix grossistes et importateurs',
   apercu: 'Aperçu client',
 };
 
@@ -159,6 +152,7 @@ export default function ProductEditor() {
   const { products, categories, loading, error, reload } = useData();
   const navigate = useNavigate();
   const product = id ? (products.find((p) => p.id === id) ?? null) : null;
+  const { space } = useSpace();
 
   if (error && products.length === 0) {
     return (
@@ -181,7 +175,7 @@ export default function ProductEditor() {
           title="Produit introuvable"
           body={`Aucune fiche ne porte l’identifiant « ${id} ». Elle a peut-être été supprimée.`}
           cta="Retour aux produits"
-          onPress={() => navigate('/produits')}
+          onPress={() => navigate(sp('/produits'))}
         />
       </Page>
     );
@@ -189,10 +183,12 @@ export default function ProductEditor() {
   if (categories.length === 0) {
     return (
       <Page className="pt-12">
-        <EmptyState title="Aucun rayon" body="Un produit se range dans un rayon. Créez d’abord un rayon." cta="Créer un rayon" onPress={() => navigate('/rayons')} />
+        <EmptyState title="Aucun rayon" body="Un produit se range dans un rayon. Créez d’abord un rayon." cta="Créer un rayon" onPress={() => navigate(sp('/rayons'))} />
       </Page>
     );
   }
+  // Espace Pros : sa propre fiche (statut, offres par groupe de pays, logistique, médias…).
+  if (space === 'b2b') return <ProEditor key={product?.id ?? 'nouveau'} product={product} />;
   return <Editor key={product?.id ?? 'nouveau'} product={product} />;
 }
 
@@ -229,8 +225,6 @@ function Editor({ product }: { product: Product | null }) {
   const [focusPack, setFocusPack] = useState<string | null>(null);
   // Un seul emballage ouvert à la fois dans la configuration ; les autres tiennent en une ligne.
   const [openPack, setOpenPack] = useState<string | null>(null);
-  // Offres ajoutées pendant cette visite : elles s'ouvrent d'elles-mêmes, les autres restent en une ligne.
-  const [freshOffers, setFreshOffers] = useState<string[]>([]);
   const benchValue = useMemo(() => ({ active: bench, el: benchEl, open: setBench }), [bench, benchEl]);
   const leaving = useRef(false);
 
@@ -327,19 +321,6 @@ function Editor({ product }: { product: Product | null }) {
     const id = form.id.trim();
     return uploadImage('packagings', /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) && id.length <= 40 ? id : 'emballage', blob);
   };
-  const removeOffer = (key: string) => {
-    const before = form.offers;
-    const gone = before.find((o) => o.key === key);
-    setForm((f) => ({ ...f, offers: f.offers.filter((o) => o.key !== key) }));
-    if (gone && (gone.exw.trim() || gone.fob.trim() || gone.countryPrices.length > 0)) {
-      toast(`Offre ${gone.mode ? `par ${gone.mode}` : 'standard'} retirée`, { action: { label: 'Annuler', onPress: () => setForm((f) => ({ ...f, offers: before })) } });
-    }
-  };
-  const setOffer = (key: string, patch: Partial<OfferForm>) => {
-    setForm((f) => ({ ...f, offers: f.offers.map((o) => (o.key === key ? { ...o, ...patch } : o)) }));
-    setServerErrors((e) => (Object.keys(e).length ? {} : e));
-  };
-
   const pickPhoto = async (file: File | undefined) => {
     if (!file) return;
     setPhotoBusy(true);
@@ -384,7 +365,7 @@ function Editor({ product }: { product: Product | null }) {
       toast(isNew ? `Fiche « ${row.name} » créée${row.available ? '' : ' (masquée pour l’instant)'}` : `Fiche « ${row.name} » enregistrée`);
       if (isNew) {
         leaving.current = true;
-        navigate(`/produits/${row.id}`, { replace: true });
+        navigate(sp(`/produits/${row.id}`), { replace: true });
       }
       return true;
     } catch (e) {
@@ -418,7 +399,7 @@ function Editor({ product }: { product: Product | null }) {
       await deleteProduct(product.id);
       toast(`Fiche « ${product.name} » supprimée définitivement`);
       leaving.current = true;
-      navigate('/produits', { replace: true });
+      navigate(sp('/produits'), { replace: true });
     } catch (e) {
       toast(messageOf(e), { tone: 'error' });
       setWorking(false);
@@ -449,31 +430,8 @@ function Editor({ product }: { product: Product | null }) {
     return [...seen.entries()].slice(0, 10);
   }, [products]);
 
-  // Commercialisé pour les professionnels : au moins une offre ouverte. Allumer sans aucune offre
-  // en crée une « standard », sans prix inventé (elle s'affichera « Prix à confirmer »).
-  // Le rayon du produit peut être masqué aux grossistes et importateurs (réglé dans Rayons).
-  const proAllowed = categories.find((c) => c.id === form.category)?.pro_visible !== false;
-  const proOn = proAllowed && form.offers.some((o) => o.available);
-  const setPro = (on: boolean) => {
-    const first = newOffer(null);
-    if (on && form.offers.length === 0) setFreshOffers((k) => [...k, first.key]);
-    setForm((f) => ({
-      ...f,
-      offers: on ? (f.offers.length === 0 ? [first] : f.offers.map((o) => ({ ...o, available: true }))) : f.offers.map((o) => ({ ...o, available: false })),
-    }));
-    setServerErrors((e) => (Object.keys(e).length ? {} : e));
-  };
-
-  const freeModes = (['avion', 'bateau', null] as (Mode | null)[]).filter((m) => !form.offers.some((o) => o.mode === m));
   const priceNumber = check.value.retail?.price ?? null;
   const zone: Zone = { mode: form.zoneMode, except: form.zoneExcept };
-  // Les deux publics ont chacun leurs prix : un prix professionnel identique au prix particulier est signalé.
-  const samePrice =
-    form.sold && form.unit === 'kg' && priceNumber !== null
-      ? form.offers.flatMap((o) =>
-          o.priceUnit !== 'kg' ? [] : ([['EXW', o.exw], ['FOB', o.fob]] as const).filter(([, v]) => parseNum(v) === priceNumber).map(([term]) => `prix ${term} ${o.mode ? `par ${o.mode}` : 'standard'}`),
-        )
-      : [];
   const canSave = dirty || isNew || !!sealIssue;
   const saveLabel = isNew ? 'Créer le produit' : sealIssue && !dirty ? 'Valider cette fiche' : 'Enregistrer';
 
@@ -572,13 +530,15 @@ function Editor({ product }: { product: Product | null }) {
   return (
     <BenchContext.Provider value={benchValue}>
     <Page>
+      {/* Modifications non enregistrées : la mise à jour automatique attend (components/Update.tsx). */}
+      <span hidden data-dirty={dirty ? 'true' : undefined} />
       {/* Barre du haut : en tête de page seulement. Elle ne suit pas le défilement, pour laisser toute la place à la fiche. */}
       <div
         data-barre="haut"
         className="relative z-20 flex items-center justify-between gap-3 px-[18px] pb-2"
         style={{ paddingTop: 'calc(max(env(safe-area-inset-top), 10px) + 6px)' }}
       >
-        <RoundButton icon={arrowBack} label="Retour" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/produits'))} />
+        <RoundButton icon={arrowBack} label="Retour" onClick={() => (window.history.length > 1 ? navigate(-1) : navigate(sp('/produits')))} />
         <h1 className="min-w-0 flex-1 truncate text-center font-display text-[18px] font-semibold">
           {isNew ? form.name || 'Nouveau produit' : form.name || product.name}
         </h1>
@@ -696,30 +656,12 @@ function Editor({ product }: { product: Product | null }) {
                 if (v) setBench('particuliers');
               }}
             />}
-            <ToggleRow
-              title="Pour les grossistes et importateurs"
-              disabled={!proAllowed}
-              detail={
-                !proAllowed
-                  ? `Impossible : le rayon « ${categories.find((c) => c.id === form.category)?.label ?? form.category} » est masqué aux grossistes et importateurs. Ils ne voient pas ce produit.`
-                  : proOn
-                  ? 'Ils voient ce produit et peuvent envoyer leur demande de commande. Leurs prix, distincts de ceux des particuliers : section « Prix grossistes et importateurs ».'
-                  : form.offers.length > 0
-                    ? 'Éteint : ils ne voient pas ce produit. Les offres et leurs prix sont conservés.'
-                    : 'Éteint : ils ne voient pas ce produit.'
-              }
-              checked={proOn}
-              onChange={(v) => {
-                setPro(v);
-                if (v) setBench('professionnels');
-              }}
-            />
           </div>
           {form.available && form.months.length === 0 && (
             <p className="mt-3 px-1 text-[12.5px] leading-[18px] text-star">Pour commercialiser ce produit, indiquez aussi ses mois de disponibilité, plus bas.</p>
           )}
-          {form.available && !form.sold && !proOn && (
-            <p className="mt-3 px-1 text-[12.5px] leading-[18px] text-star">Commercialisé, mais pour personne : allumez « particuliers », « grossistes et importateurs », ou les deux.</p>
+          {form.available && form.kind === 'frais' && !form.sold && (
+            <p className="mt-3 px-1 text-[12.5px] leading-[18px] text-star">Commercialisé, mais pas pour les particuliers : allumez « Pour les particuliers ».</p>
           )}
         </Section>
 
@@ -821,7 +763,7 @@ function Editor({ product }: { product: Product | null }) {
         <Section id="emballages" expand title="Emballages" aside={<Chip>{plural(form.packs.length, 'emballage', 'emballages')}</Chip>}>
           {bench !== 'emballages' ? (
             <>
-              <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">Box, carton, sachet… Chaque emballage a un contenu fixe et un prix fixe pour l’emballage entier. Le prix au kilo ou à la pièce reste le prix global, dans « Prix particuliers ».</p>
+              <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">Box, carton, sachet… Chaque emballage a un contenu fixe et un prix pour l’emballage entier, dans chaque devise où il est vendu (F CFA, €, $). Le premier de la liste, ou celui marqué ★, s’ouvre par défaut.</p>
               {form.packs.length > 0 && (
                 // Glisser une ligne pour réordonner : le premier emballage proposé sert de défaut.
                 <Reorder.Group axis="y" values={form.packs} onReorder={(packs) => setForm((f) => ({ ...f, packs }))} className="mt-3 flex flex-col gap-2" as="div">
@@ -1294,63 +1236,6 @@ function Editor({ product }: { product: Product | null }) {
             />
           </div>
           <GroupError message={err('months')} />
-        </Section>
-
-        {/* ───── Professionnels */}
-        <Section id="professionnels" expand title="Prix grossistes et importateurs" aside={<Chip>{plural(form.offers.length, 'offre', 'offres')}</Chip>}>
-          <p className="mt-2 text-[13.5px] leading-5 text-fg-dim">
-            {form.offers.length === 0
-              ? 'Aucune offre : ce produit n’apparaît pas dans l’espace des grossistes et importateurs. Les particuliers ne sont pas concernés.'
-              : 'Leurs prix, à part de ceux des particuliers. Une offre par mode de transport ; un prix laissé vide s’affiche « Prix à confirmer » et n’entre dans aucun total.'}
-          </p>
-          {!proAllowed && (
-            <div className="mt-3">
-              <Notice tone="star" title="Rayon masqué aux grossistes et importateurs">
-                Aucune offre de ce produit n’est publiée pour eux{form.offers.length > 0 ? ' : celles ci-dessous sont conservées, sans être proposées' : ''}. Ce réglage se change dans Rayons.
-              </Notice>
-            </div>
-          )}
-          <div className="mt-3.5 flex flex-col gap-3">
-            {form.offers.map((o, i) => (
-              <OfferCard
-                key={o.key}
-                offer={o}
-                index={i}
-                rules={rules}
-                zone={zone}
-                error={err}
-                touch={touch}
-                invalid={shownUnder(`wholesale.${i}.`)}
-                startOpen={freshOffers.includes(o.key)}
-                onChange={(patch) => setOffer(o.key, patch)}
-                onRemove={() => removeOffer(o.key)}
-              />
-            ))}
-          </div>
-          {samePrice.length > 0 && (
-            <p role="status" className="mt-3 rounded-2xl border border-star/40 bg-star/10 px-3.5 py-2.5 text-[13px] font-semibold leading-[19px] text-star" data-alerte="meme-prix">
-              À vérifier : {samePrice.join(', ')} — c’est exactement le prix des particuliers ({euro(priceNumber as number)} le kg). Les deux publics ont normalement des prix différents.
-            </p>
-          )}
-          <GroupError message={err('wholesale')} />
-          {freeModes.length > 0 && (
-            <div className="mt-3.5 flex flex-wrap gap-2.5">
-              {freeModes.map((m) => (
-                <GhostButton
-                  key={String(m)}
-                  compact
-                  tone="leaf"
-                  icon={m === 'avion' ? airplaneOutline : m === 'bateau' ? boatOutline : cubeOutline}
-                  label={m === 'avion' ? 'Ajouter l’avion' : m === 'bateau' ? 'Ajouter le bateau' : 'Ajouter une offre standard'}
-                  onClick={() => {
-                    const offer = newOffer(m);
-                    setFreshOffers((k) => [...k, offer.key]);
-                    set('offers', [...form.offers, offer]);
-                  }}
-                />
-              ))}
-            </div>
-          )}
         </Section>
 
         {/* ───── Données d'exemple */}

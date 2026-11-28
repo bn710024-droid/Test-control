@@ -2,6 +2,7 @@ import {
   useEffect,
   useId,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
@@ -346,14 +347,26 @@ export function FilterChip({ active, onClick, children, count }: { active: boole
 
 // ───────────── Panneau montant (components/Sheet.tsx)
 
-export function Sheet({ open, onClose, title, children, footer }: {
+export function Sheet({ open, onClose, title, children, footer, side }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  /** Sur ordinateur, un panneau latéral droit de 480 px plutôt qu'une feuille de téléphone. */
+  side?: boolean;
 }) {
   const titleId = useId();
+  // Ordinateur (1024 px et plus) : panneau latéral, qui glisse depuis la droite.
+  const [desk, setDesk] = useState(() => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches);
+  useEffect(() => {
+    if (!side) return;
+    const q = window.matchMedia('(min-width: 1024px)');
+    const on = () => setDesk(q.matches);
+    q.addEventListener('change', on);
+    return () => q.removeEventListener('change', on);
+  }, [side]);
+  const lateral = !!side && desk;
   const panel = useRef<HTMLDivElement>(null);
   const drag = useDragControls();
   const far = typeof window === 'undefined' ? 900 : window.innerHeight;
@@ -383,7 +396,7 @@ export function Sheet({ open, onClose, title, children, footer }: {
   return createPortal(
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[70] flex items-end justify-center">
+        <div className={cx('fixed inset-0 z-[70] flex', lateral ? 'items-stretch justify-end' : 'items-end justify-center')}>
           <motion.button
             type="button"
             aria-label="Fermer"
@@ -401,13 +414,16 @@ export function Sheet({ open, onClose, title, children, footer }: {
             aria-modal="true"
             aria-labelledby={titleId}
             tabIndex={-1}
-            className="relative flex max-h-[86dvh] w-full max-w-[520px] flex-col rounded-t-[32px] border border-b-0 border-line bg-sheet px-5 pt-2.5 outline-none"
+            className={cx(
+              'relative flex flex-col border-line bg-sheet px-5 pt-2.5 outline-none',
+              lateral ? 'h-full w-[480px] max-w-full rounded-l-[28px] border-l pt-5' : 'max-h-[86dvh] w-full max-w-[520px] rounded-t-[32px] border border-b-0',
+            )}
             style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 16px)' }}
-            initial={{ y: far }}
-            animate={{ y: 0 }}
-            exit={{ y: far, transition: { duration: 0.28, ease: [0.4, 0, 1, 1] } }}
+            initial={lateral ? { x: 520 } : { y: far }}
+            animate={lateral ? { x: 0 } : { y: 0 }}
+            exit={lateral ? { x: 520, transition: { duration: 0.24, ease: [0.4, 0, 1, 1] } } : { y: far, transition: { duration: 0.28, ease: [0.4, 0, 1, 1] } }}
             transition={{ type: 'spring', stiffness: 360, damping: 34, mass: 0.9 }}
-            drag="y"
+            drag={lateral ? false : 'y'}
             dragControls={drag}
             dragListener={false}
             dragConstraints={{ top: 0, bottom: 0 }}
@@ -417,7 +433,7 @@ export function Sheet({ open, onClose, title, children, footer }: {
             }}
           >
             {/* Poignée : on tire le panneau vers le bas pour le refermer. */}
-            <div aria-hidden onPointerDown={(e) => drag.start(e)} className="-mt-2.5 flex h-7 shrink-0 cursor-grab touch-none justify-center pt-2.5 active:cursor-grabbing">
+            <div aria-hidden onPointerDown={(e) => drag.start(e)} className={cx('-mt-2.5 h-7 shrink-0 cursor-grab touch-none justify-center pt-2.5 active:cursor-grabbing', lateral ? 'hidden' : 'flex')}>
               <span className="h-1 w-10 rounded-full bg-line-strong" />
             </div>
             <div className="mb-3 flex shrink-0 items-center gap-3">

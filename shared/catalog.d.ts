@@ -106,6 +106,10 @@ export type ProductRow = {
   packagings?: Packaging[];
   /** Pays où le produit s'affiche. Enregistré avec la fiche, rangé dans la table `zones`. */
   zone: Zone;
+  /** Espace du produit : Particuliers ('b2c') ou Grossistes et importateurs ('b2b'). */
+  space?: 'b2c' | 'b2b';
+  /** Fiche pro (espace 'b2b' seulement). */
+  pro?: import('./pro.js').ProSheet | null;
 };
 
 /** Saisie d'une fiche : les nombres peuvent être absents (`null`) ou illisibles (`NaN`). */

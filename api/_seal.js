@@ -46,6 +46,18 @@ const FIELDS = {
 };
 
 export const SEALED_TABLES = Object.keys(FIELDS);
+const OPTIONAL = { products: ['space', 'pro'], categories: ['space'], publications: ['space'] };
+
+/** Espace demandé (`?espace=b2b`, ou `espace` dans le corps) : 'b2c' par défaut. */
+export const spaceOf = (req, body) => {
+  const v = String(req?.query?.espace ?? body?.espace ?? '').toLowerCase();
+  return v === 'b2b' || v === 'pros' ? 'b2b' : 'b2c';
+};
+/** Espace d'une ligne (les lignes d'avant la séparation n'en ont pas : Particuliers). */
+export const rowSpace = (row) => (row?.space === 'b2b' ? 'b2b' : 'b2c');
+/** Réglages propres à un espace : ceux des Pros sont rangés sous « pro.<clé> ». */
+export const SPACE_SETTINGS = { b2c: ['filters', 'missing', 'payments', 'transport'], b2b: ['filters', 'missing', 'terms'] };
+export const settingKey = (space, key) => (space === 'b2b' && SPACE_SETTINGS.b2b.includes(key) ? `pro.${key}` : key);
 export const keyColumn = (table) => (table === 'settings' ? 'key' : 'id');
 export const refOf = (table, row) => `${table}:${row[keyColumn(table)]}`;
 
@@ -77,6 +89,12 @@ const matches = (sig, text) => SEAL_KEYS.some((k) => same(sig, hmacWith(k, text)
 function rowText(table, row) {
   const picked = {};
   for (const f of FIELDS[table]) picked[f] = row[f] ?? null;
+  // Deux espaces (28/11/2026) : l'espace et la fiche pro ne comptent que s'ils sont posés, pour que
+  // les lignes Particuliers scellées avant restent valides ('b2c' = la valeur d'avant).
+  for (const f of OPTIONAL[table] ?? []) {
+    const v = row[f];
+    if (v !== null && v !== undefined && !(f === 'space' && v === 'b2c')) picked[f] = v;
+  }
   // Les nombres décimaux stockés en « numeric » peuvent revenir sous forme de texte.
   if (table === 'products') picked.rating = Number(picked.rating) || 0;
   return `${table}\n${canon(picked)}`;

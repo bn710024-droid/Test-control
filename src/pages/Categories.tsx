@@ -193,10 +193,9 @@ export default function Categories() {
                           <span className="mt-px block truncate text-[12.5px] text-fg-faint">
                             {plural(n, 'produit', 'produits')} · {c.id}
                           </span>
-                          {(unknown || !art.src || c.pro_visible === false || (c._seal && c._seal !== 'ok')) && (
+                          {(unknown || !art.src || (c._seal && c._seal !== 'ok')) && (
                             <span className="mt-1.5 flex flex-wrap gap-1.5">
                               {c._seal && c._seal !== 'ok' && <Chip tone="danger">À valider</Chip>}
-                              {c.pro_visible === false && <Chip>Masqué aux pros</Chip>}
                               {unknown && <Chip tone="star">Inconnu de l’application</Chip>}
                               {!art.src && <Chip tone="star">Sans illustration</Chip>}
                             </span>
@@ -293,22 +292,6 @@ export default function Categories() {
                 )}
               </>
             )}
-
-            <div className="mt-5 flex items-center gap-3 rounded-2xl bg-black/25 p-3.5">
-              <div className="min-w-0 flex-1">
-                <p className="text-[15px] font-bold leading-5">Visible par les grossistes et importateurs</p>
-                <p className="mt-0.5 text-[13px] leading-[18px] text-fg-dim">
-                  {draft.pro_visible
-                    ? 'Ils voient les produits de ce rayon qui leur sont proposés.'
-                    : 'Éteint : ils ne voient aucun produit de ce rayon. Les particuliers ne sont pas concernés.'}
-                </p>
-              </div>
-              <Switch
-                checked={draft.pro_visible}
-                onChange={(v) => setDraft((d) => (d ? { ...d, pro_visible: v } : d))}
-                label="Rayon visible par les grossistes et importateurs"
-              />
-            </div>
 
             <p className="mb-2 mt-5 text-[13px] font-semibold text-fg-dim">Illustration ronde</p>
             {candidates.length > 0 ? (

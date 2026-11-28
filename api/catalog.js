@@ -1,5 +1,5 @@
 import supabase from './db-client.js';
-import { stateOf } from './_seal.js';
+import { stateOf, spaceOf, rowSpace, settingKey } from './_seal.js';
 import { loadCatalogSource } from './_catalog-data.js';
 import { buildDocument, DEFAULT_RULES, isCountryCode } from '../shared/catalog.js';
 import { requestMessageOf } from '../shared/requests.js';
@@ -27,14 +27,18 @@ export default async function handler(req, res) {
     // `?pays=SN` : le catalogue tel que le voit un client de ce pays.
     const asked = String(req.query?.pays ?? '').toUpperCase();
     if (asked && !isCountryCode(asked)) return res.status(400).json({ error: 'Pays inconnu : attendu, un code à deux lettres (SN, FR…).' });
+    // `?espace=b2b` : catalogue des grossistes et importateurs ; sinon celui des particuliers.
+    // Un particulier ne voit jamais un produit pro, et l'inverse.
+    const space = spaceOf(req);
     const [src, annonces] = await Promise.all([
-      loadCatalogSource(['filters', 'missing', 'gp', 'payments', 'transport']),
+      loadCatalogSource(['filters', 'missing', 'gp', 'payments', 'transport'], space),
       supabase.from('publications').select('*').eq('kind', 'annonce').eq('published', true).order('sort_order', { ascending: true }),
     ]);
     if (annonces.error) throw annonces.error;
+    annonces.data = annonces.data.filter((r) => rowSpace(r) === space);
     const { seals, okProducts, okCategories, packagings, zones, rulesRow, rulesOk, audienceRow, proHidden } = src;
     const settings = { data: src.settings };
-    const filtersRow = settings.data.find((r) => r.key === 'filters') ?? null;
+    const filtersRow = settings.data.find((r) => r.key === settingKey(space, 'filters')) ?? null;
     const filtersOk = !!filtersRow && stateOf('settings', filtersRow, seals) === 'ok';
 
     const stamps = [
@@ -60,6 +64,9 @@ export default async function handler(req, res) {
       updatedAt,
     });
     if (asked) doc.country = asked;
+    doc.space = space;
+    // Particuliers : aucune offre professionnelle publiée.
+    if (space === 'b2c') doc.products = doc.products.map((p) => ({ ...p, wholesale: [] }));
     // Filtres de l'accueil (« Tout », « De saison ») : nom et photo réglés par l'équipe. Clé
     // supplémentaire, que l'application actuelle ignore (ses filtres sont dans son code).
     if (filtersOk) {
@@ -103,16 +110,16 @@ export default async function handler(req, res) {
       });
     // Produit introuvable : le message qui demande au client quel produit il recherche, et la
     // confirmation qu'il lit après l'envoi. `enabled: false` : l'application ne propose rien.
-    const missingRow = settings.data.find((r) => r.key === 'missing') ?? null;
+    const missingRow = settings.data.find((r) => r.key === settingKey(space, 'missing')) ?? null;
     doc.productRequest = requestMessageOf(missingRow && stateOf('settings', missingRow, seals) === 'ok' ? missingRow.value : null);
     // Moyens de paiement des particuliers, réglés dans Réglages › Moyens de paiement : seuls les
     // moyens activés sont publiés (réglage absent ou non validé : les quatre).
-    const paymentsRow = settings.data.find((r) => r.key === 'payments') ?? null;
+    const paymentsRow = space === 'b2c' ? (settings.data.find((r) => r.key === 'payments') ?? null) : null;
     const paymentsOk = !!paymentsRow && stateOf('settings', paymentsRow, seals) === 'ok';
     doc.payments = publishedPayments(paymentsOk ? paymentsRow.value : null);
     // Forfait transport des particuliers par zone (Réglages › Transport), en euros. Publié seulement
     // une fois réglé et validé : sans lui, l'application garde son barème.
-    const transportRow = settings.data.find((r) => r.key === 'transport') ?? null;
+    const transportRow = space === 'b2c' ? (settings.data.find((r) => r.key === 'transport') ?? null) : null;
     if (transportRow && stateOf('settings', transportRow, seals) === 'ok') {
       // `currency` : la devise par défaut ; chaque zone dit la sienne (euro ou franc CFA).
       // `currency: 'ZONES'` : un montant par devise de client (`fees`). Une application d'avant (qui

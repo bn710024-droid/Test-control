@@ -1,0 +1,53 @@
+ESPACE PARTICULIERS — 42 produits, inchangés (marqués « particuliers »)
+  · 4 emballés actifs : Mangue séchée, Ananas séché, Poudre de Baobab, Poudre de Bissap
+  · 38 frais ou inactifs : « Pour les particuliers » reste désactivé
+  · leur offre pro est gardée en base mais n’est plus publiée aux particuliers
+
+ESPACE PROS — 12 copies indépendantes (pays de vente : monde entier)
+  + Banane → « banane-pro », rayon « fruits-pro », toute l’année, statut Disponible
+      Standard : Europe EXW 0,52 € · FOB 0,66 € — min 500 kg, palier 100 kg, max 100000 kg ; autres groupes vides
+  + Melon → « melon-pro », rayon « fruits-pro », fév mar avr mai, statut Disponible
+      Standard : Europe EXW 0,95 € · FOB 1,15 € — min 500 kg, palier 100 kg, max 100000 kg ; autres groupes vides
+  + Orange → « orange-pro », rayon « agrumes-pro », jan fév mar déc, statut Disponible
+      Standard : Europe EXW 0,48 € · FOB 0,6 € — min 500 kg, palier 100 kg, max 100000 kg ; autres groupes vides
+  + Pamplemousse → « pamplemousse-pro », rayon « agrumes-pro », mai juin juil août sep, statut Disponible
+      Standard : Europe EXW 0,62 € · FOB 0,78 € — min 500 kg, palier 100 kg, max 100000 kg ; autres groupes vides
+  + Avocat → « avocat-pro », rayon « exotiques-pro », mar avr mai juin juil août sep, statut Disponible
+      Standard : Europe EXW 1,7 € · FOB 1,95 € — min 500 kg, palier 100 kg, max 100000 kg ; autres groupes vides
+  + Mangue → « mangue-pro », rayon « exotiques-pro », mai juin juil août sep oct, statut Disponible
+      (côté particuliers : vendu au Sénégal seulement — côté pros : monde entier)
+      Avion : Europe EXW 1,35 € · FOB 1,6 € — min 500 kg, palier 500 kg, max 100000 kg ; autres groupes vides
+      Bateau : Europe EXW prix sur demande · FOB prix sur demande — min 1 conteneur(s), palier 1, max 99 ; autres groupes vides
+  + Ananas → « ananas-pro », rayon « exotiques-pro », toute l’année, statut Disponible
+      Bateau : Europe EXW 0,7 € · FOB 0,88 € — min 1 conteneur(s), palier 1, max 99 ; autres groupes vides
+      Avion : Europe EXW prix sur demande · FOB prix sur demande — min 500 kg, palier 500 kg, max 100000 kg ; autres groupes vides
+  + Grenade → « grenade-pro », rayon « exotiques-pro », sep oct nov déc, statut Disponible
+      Standard : Europe EXW 1,1 € · FOB 1,3 € — min 500 kg, palier 100 kg, max 100000 kg ; autres groupes vides
+  + Mangue séchée → « mangue-sechee-pro », rayon « seches-pro », toute l’année, statut Disponible
+      Avion : Europe EXW 6,4 € · FOB 6,9 € — min 500 kg, palier 500 kg, max 100000 kg ; autres groupes vides
+  + Ananas séché → « ananas-seche-pro », rayon « seches-pro », toute l’année, statut Disponible
+      Bateau : Europe EXW 2,6 € · FOB 2,9 € — min 1 conteneur(s), palier 1, max 99 ; autres groupes vides
+  + Poudre de Baobab → « baobab-pro », rayon « transformes-pro », toute l’année, statut Disponible
+      Bateau : Europe EXW prix sur demande · FOB prix sur demande — min 1 conteneur(s), palier 1, max 99 ; autres groupes vides
+  + Tomate grappe → « tomate-pro », rayon « legumes-pro », jan fév mar avr mai oct nov déc, statut Disponible
+      Standard : Europe EXW 0,9 € · FOB 1,08 € — min 500 kg, palier 100 kg, max 100000 kg ; autres groupes vides
+  Sans copie pro (aucune offre pro) : 30 produits
+
+RAYONS — 8 copiés dans l’espace Pros, puis indépendants :
+  + Fruits → « fruits-pro », photo du rayon : aucune (« pomme » n’a pas de copie pro)
+  + Légumes → « legumes-pro », photo du rayon : produit tomate-pro
+  + Agrumes → « agrumes-pro », photo du rayon : produit orange-pro
+  + Fruits rouges → « rouges-pro », photo du rayon : aucune (« fraise » n’a pas de copie pro)
+  + Exotiques → « exotiques-pro », photo du rayon : produit avocat-pro
+  + Séchés → « seches-pro », photo du rayon : produit mangue-sechee-pro
+  + Transformés → « transformes-pro », photo du rayon : produit baobab-pro
+  + Aromates → « aromates-pro », photo du rayon : aucune (« ail » n’a pas de copie pro)
+
+PUBLICATIONS — 0 : aucune à copier
+
+RÉGLAGES
+  · Particuliers : moyens de paiement, transport (3 devises), message « introuvable », filtres de l’accueil
+  · Pros : règles avion / bateau / standard (reprises), message « introuvable » et filtres (copiés)
+  · Pros, nouveaux et VIDES (rien d’inventé) : conditions de paiement, port, aéroport, station de conditionnement
+
+COMMANDES — rien ne bouge : commandes et paniers → Particuliers ; demandes pros → Pros ; introuvables rangés selon le type du compte.

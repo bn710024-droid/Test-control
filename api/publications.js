@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import supabase from './db-client.js';
 import { preflight, requireAdmin, optionalAdmin, readBody, log, serverError } from './_lib.js';
-import { loadSeals, stateOf, sealRows, unseal } from './_seal.js';
+import { loadSeals, stateOf, sealRows, unseal , spaceOf, rowSpace } from './_seal.js';
 import { tooMany } from './_limit.js';
 import { annonceState } from '../shared/orders.js';
 
@@ -297,6 +297,10 @@ export default async function handler(req, res) {
       return await receiveReactions(req, readBody(req), all.data, seals, res);
     }
 
+    // Chaque espace a ses publications : ce qui est publié côté Pros n'apparaît que chez les pros.
+    const space = spaceOf(req);
+    all.data = all.data.filter((r) => rowSpace(r) === space);
+
     if (req.method === 'GET') {
       const pub = req.query?.public;
       const live = (kind) => all.data.filter((r) => r.kind === kind && r.published && stateOf('publications', r, seals) === 'ok');
@@ -422,6 +426,7 @@ export default async function handler(req, res) {
       const { data, error } = await supabase
         .from('publications')
         .insert({
+          space,
           id: `${PREFIX[body.kind]}-${crypto.randomBytes(7).toString('hex')}`,
           kind: body.kind,
           data: checked.value,

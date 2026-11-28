@@ -259,9 +259,54 @@ async function trackPosition(req, body, res) {
   return res.status(200).json({ ok: true, tracking: true, saved: false });
 }
 
+const FREQUENCIES = ['hebdomadaire', 'mensuelle', 'ponctuelle'];
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Programme d'un acheteur pro (fiche pro › « Faire un programme ») : une quantité étalée dans le
+ * temps. Compte obligatoire. Rangé comme une demande pro (`type: 'pro'`, `kind: 'programme'`) et
+ * suivi avec les mêmes étapes (intérêt reçu → contacté → en discussion → contrat conclu…).
+ */
+function programmeOf(body) {
+  const g = body.programme && typeof body.programme === 'object' ? body.programme : {};
+  const quantity = num(g.quantity);
+  if (!quantity || quantity <= 0) return { error: 'Indiquez la quantité totale du programme.' };
+  const unit = ['kg', 'tonnes', 'conteneurs'].includes(g.unit) ? g.unit : 'tonnes';
+  const start = DAY.test(String(g.start ?? '')) ? g.start : null;
+  const end = DAY.test(String(g.end ?? '')) ? g.end : null;
+  if (!start) return { error: 'Indiquez la date de début du programme.' };
+  if (end && end < start) return { error: 'La fin du programme doit suivre son début.' };
+  const value = {
+    calibres: (Array.isArray(g.calibres) ? g.calibres : []).slice(0, 20).map((c) => clip(c, 40)).filter(Boolean),
+    packaging: clip(g.packaging, 120),
+    quantity: round2(quantity),
+    unit,
+    start,
+    end,
+    frequency: FREQUENCIES.includes(g.frequency) ? g.frequency : 'ponctuelle',
+    destination: { country: clip(g.destination?.country, 60), place: clip(g.destination?.place, 80) },
+    details: clip(g.details, 600),
+  };
+  const line = {
+    product_id: clip(g.productId ?? body.productId, 60),
+    name: clip(g.product ?? body.product, 80) || 'Produit',
+    mode: null,
+    qty: unit === 'tonnes' ? round2(quantity * 1000) : value.quantity,
+    unit: unit === 'conteneurs' ? 'conteneur' : 'kg',
+    noun: null,
+    kg: unit === 'kg' ? value.quantity : unit === 'tonnes' ? round2(quantity * 1000) : null,
+    unit_price: null,
+    total: null,
+  };
+  return { value, line };
+}
+
 function fromPayload(body) {
-  const pro = body.type === 'demande_professionnelle';
-  const lines = linesOf(body.lines);
+  const programme = body.type === 'programme' ? programmeOf(body) : null;
+  if (programme?.error) return { error: programme.error };
+  if (programme && !String(body.customer?.accountId ?? '').trim()) return { error: 'Un programme se fait depuis un compte : connectez-vous d’abord.' };
+  const pro = body.type === 'demande_professionnelle' || !!programme;
+  const lines = programme ? [programme.line] : linesOf(body.lines);
   if (lines.length === 0) return { error: 'La commande ne contient aucune ligne lisible.' };
   const c = body.customer && typeof body.customer === 'object' ? body.customer : {};
   const customer = {
@@ -284,11 +329,12 @@ function fromPayload(body) {
   return {
     order: {
       type: pro ? 'pro' : 'particulier',
+      ...(programme ? { kind: 'programme', programme: programme.value } : null),
       number: clip(body.reference, 40) || 'Sans numéro',
       created_at: createdAt,
       is_example: false,
       customer,
-      address: clip(pro ? body.destination : body.address, 300),
+      address: clip(programme ? [programme.value.destination.place, programme.value.destination.country].filter(Boolean).join(', ') : pro ? body.destination : body.address, 300),
       country: clip(body.country, 60),
       lines,
       incoterm: pro ? (body.incoterm === 'FOB' ? 'FOB' : 'EXW') : null,
@@ -629,7 +675,7 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const body = readBody(req);
       // `await` : une erreur est rattrapée ici (réponse 500 propre, en-têtes CORS compris).
-      if (body.type === 'commande' || body.type === 'demande_professionnelle') return await receive(req, body, res);
+      if (body.type === 'commande' || body.type === 'demande_professionnelle' || body.type === 'programme') return await receive(req, body, res);
       if (body.type === 'produit_introuvable') return await receiveRequest(req, body, res);
       if (body.type === 'panier') return await receiveCart(req, body, res, { loadOrders: loadAll });
       if (body.action === 'position') return await trackPosition(req, body, res);

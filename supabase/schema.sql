@@ -39,6 +39,12 @@ create table if not exists products (
   updated_by text                -- identifiant du compte, jamais une adresse e-mail
 );
 
+-- Deux espaces (28/11/2026) : Particuliers ('b2c') et Professionnels ('b2b'), données séparées.
+-- Un produit, un rayon, une publication n'existe que dans un espace. Fiche pro : colonne `pro`.
+alter table products add column if not exists space text not null default 'b2c' check (space in ('b2c','b2b'));
+alter table products add column if not exists pro jsonb;
+alter table categories add column if not exists space text not null default 'b2c' check (space in ('b2c','b2b'));
+
 create table if not exists settings (
   key text primary key,          -- 'rules' | 'compat' | 'link' | 'audience' (rayons masqués aux pros) | 'filters' (Tout, De saison)
   value jsonb not null,
@@ -79,6 +85,7 @@ create table if not exists publications (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+alter table publications add column if not exists space text not null default 'b2c' check (space in ('b2c','b2b'));
 -- Stockage : compartiment public « publications » (vidéos MP4/WebM/MOV et aperçus, 50 Mo).
 
 -- Stockage : compartiment public « catalogue » (image/webp, image/png, image/jpeg, 3 Mo).

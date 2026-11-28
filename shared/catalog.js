@@ -9,6 +9,8 @@ import { CURRENCIES, CURRENCY_SIGN } from './zones.js';
  * deux fois : dans le formulaire pour expliquer l'erreur, puis sur le serveur qui a le dernier mot.
  */
 
+import { proToDoc } from './pro.js';
+
 export const SCHEMA_VERSION = 1;
 export const DEFAULT_TINT = '#7AAA2C';
 export const ALL_MONTHS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
@@ -318,7 +320,9 @@ export function productToDoc(row) {
     retail: retailToDoc(row.retail),
     // Particuliers : 'emballe' = vendu uniquement par ses emballages ; 'frais' = au kilo ou à la pièce.
     b2c: isPacked(row.retail) ? 'emballe' : 'frais',
-    wholesale: (Array.isArray(row.wholesale) ? row.wholesale : []).map(offerToDoc),
+    wholesale: row.space === 'b2b' ? [] : (Array.isArray(row.wholesale) ? row.wholesale : []).map(offerToDoc),
+    // Espace Pros : la fiche pro (statut, offres par groupe de pays, logistique, médias…).
+    ...(row.space === 'b2b' ? { pro: proToDoc(row.pro) } : null),
   };
 }
 
@@ -1246,8 +1250,20 @@ export function completeness(p, ctx = {}) {
   if (!Array.isArray(p.months) || p.months.length === 0) {
     out.push({ code: 'saison', label: 'Mois de disponibilité à renseigner' });
   }
-  const offers = Array.isArray(p.wholesale) ? p.wholesale : [];
-  if (!p.retail && offers.length === 0) {
+  // Espace Pros : la fiche pro seule compte (offres par groupe de pays).
+  if (p.space === 'b2b') {
+    const proOffers = (p.pro?.offers ?? []).filter((o) => o.active !== false);
+    if (proOffers.length === 0) out.push({ code: 'prix', label: 'Aucune offre : proposé à personne' });
+    proOffers.forEach((o) => {
+      if (!Object.values(o.groups ?? {}).some((g) => g?.offered)) out.push({ code: 'prix-pro', label: `${modeLabel(o.mode)} : proposé dans aucun groupe de pays` });
+    });
+    return out;
+  }
+  // Espace Particuliers : les anciennes offres pro ne sont plus publiées ici.
+  const offers = [];
+  if (p.retail?.kind === 'emballe') {
+    // Produit emballé : vendu par ses emballages, sans prix au kilo.
+  } else if (!p.retail && offers.length === 0) {
     out.push({ code: 'prix', label: 'Aucun prix ni offre : produit proposé à personne' });
   } else if (p.retail && positive(p.retail.price) === null) {
     out.push({ code: 'prix', label: 'Prix particulier à fixer' });

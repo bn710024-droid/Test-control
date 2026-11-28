@@ -41,10 +41,13 @@ function currentBuild() {
   return null;
 }
 
-/** Une saisie est peut-être en cours : on ne recharge pas la page sous les doigts de quelqu'un. */
+/**
+ * Une saisie est en cours : un champ a le curseur, une fenêtre est ouverte, ou un écran a des
+ * modifications non enregistrées (`data-dirty`). Hors saisie, la page se recharge d'elle-même.
+ */
 function busy() {
   const tag = document.activeElement?.tagName ?? '';
-  return /^#\/(produits\/.+|prix)/.test(window.location.hash) || !!document.querySelector('[role="dialog"]') || tag === 'INPUT' || tag === 'TEXTAREA';
+  return !!document.querySelector('[role="dialog"], [data-dirty="true"]') || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
 }
 
 /**
@@ -74,7 +77,8 @@ export function UpdateWatcher() {
         if (!busy() && !already) {
           store.set(KEY, latest);
           reloadTo(latest);
-        } else {
+        } else if (!already) {
+          // Saisie en cours : on attend sa fin (voir « focusout » plus bas), sans rien perdre.
           setWaiting(latest);
         }
       } catch {
@@ -86,12 +90,16 @@ export function UpdateWatcher() {
     const timer = window.setInterval(check, 30000);
     document.addEventListener('visibilitychange', check);
     window.addEventListener('focus', check);
+    // Fin d'une saisie : on revérifie aussitôt, pour recharger dès que c'est sans risque.
+    const later = () => window.setTimeout(check, 1200);
+    document.addEventListener('focusout', later);
     return () => {
       stopped = true;
       window.clearTimeout(first);
       window.clearInterval(timer);
       document.removeEventListener('visibilitychange', check);
       window.removeEventListener('focus', check);
+      document.removeEventListener('focusout', later);
     };
   }, []);
 
@@ -99,7 +107,7 @@ export function UpdateWatcher() {
   return createPortal(
     <div className="fixed inset-x-3 z-[90] flex justify-center" style={{ top: 'calc(env(safe-area-inset-top) + 10px)' }} role="status">
       <div className="flex max-w-full items-center gap-3 rounded-full border border-line-strong bg-toast py-1.5 pl-4 pr-1.5 shadow-[0_14px_34px_rgba(0,0,0,0.5)]">
-        <span className="min-w-0 truncate text-[13.5px] font-bold">Nouvelle version disponible</span>
+        <span className="min-w-0 truncate text-[13.5px] font-bold">Nouvelle version : rechargement à la fin de votre saisie</span>
         <button type="button" onClick={() => reloadTo(null)} className="press flex min-h-11 shrink-0 items-center rounded-full bg-leaf px-4 text-[13.5px] font-extrabold text-on-leaf">
           Mettre à jour
         </button>

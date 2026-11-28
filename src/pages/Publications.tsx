@@ -52,7 +52,7 @@ const VIEW_TEXT: Record<View, { add: string; emptyTitle: string; emptyBody: stri
   videos: {
     add: 'Publier une vidéo',
     emptyTitle: 'Aucune vidéo',
-    emptyBody: 'Publiez la première vidéo de l’équipe. Tant qu’il n’y en a pas, l’application montre ses vidéos de démonstration.',
+    emptyBody: 'Publiez la première vidéo de l’équipe. Tant qu’il n’y en a pas, l’espace Découvrir de l’application reste sans vidéo.',
     where: 'Espace Découvrir de l’application · Favoris › Découvrir',
     intro: 'Les vidéos de l’équipe. Le client les regarde, les aime et les commente : rien n’y mène à un produit. Les statistiques de chaque vidéo sont sur sa carte et dans sa fiche.',
   },
@@ -60,7 +60,7 @@ const VIEW_TEXT: Record<View, { add: string; emptyTitle: string; emptyBody: stri
     add: 'Publier des photos',
     emptyTitle: 'Aucune publication photo',
     emptyBody: 'Créez la première : une à dix de vos photos, que le client fait défiler de côté, avec une description dessous.',
-    where: 'Publications photo · pas encore affichées par l’application',
+    where: 'Espace Découvrir de l’application · Favoris › Découvrir › Photos',
     intro: 'Vos propres photos, que le client fait défiler de côté, avec une description dessous. Il peut les aimer et les commenter : rien n’y mène à un produit. Les statistiques de chaque publication sont sur sa carte et dans sa fiche.',
   },
   annonces: {
@@ -536,7 +536,7 @@ export default function Publications() {
         <div className="mx-5 mt-5">
           <Notice tone={view === 'annonces' ? 'neutral' : 'star'} title={view === 'annonces' ? 'Annonces dans l’application' : 'Dans l’application'}>
             {view === 'annonces'
-              ? 'Seules les annonces en cours sont envoyées, avec leur date de fin ; sans annonce en cours, pas de bandeau. L’application les relit toutes les minutes. Une annonce faite de votre image s’affiche en fond du bandeau, avec le bouton vers son produit ; une image sans produit n’est pas encore affichée par l’application.'
+              ? 'Seules les annonces en cours sont envoyées, avec leur date de fin ; sans annonce en cours, pas de bandeau. L’application les relit toutes les minutes. Une annonce faite de votre image s’affiche en fond du bandeau : avec un bouton vers son produit, touchable, ou image seule, sans lien.'
               : view === 'photos'
                 ? 'L’application n’affiche pas encore les publications photo : l’écran reste à ajouter. Elles sont enregistrées et publiées ici, prêtes pour cette mise à jour.'
                 : 'L’application reliée lit ces vidéos (Favoris › Découvrir) et envoie ici les vues, les J’aime et les commentaires, sans le nom du compte pour l’instant.'}

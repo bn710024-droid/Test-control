@@ -14,6 +14,7 @@ import { PRO_STAGES, clientNotice, proStageLabel, proStageOf, type ProStage } fr
 import { countryName, isCountryCode } from '../../shared/catalog.js';
 import { ACTIVITY, Kpi, Refresh, Row, contactLink, nameInitials } from './ordersKit';
 import { ClientCart } from './Carts';
+import { sp, useSpace, type Space } from '../lib/space';
 
 // ───────────── Repères communs
 
@@ -175,7 +176,9 @@ function currentStep(o: Order) {
   return last && last.status === o.status && (o.type !== 'pro' || proStageOf(last) === proStageOf(o)) ? last : null;
 }
 /** Le client reste à prévenir du statut en cours (la simple arrivée de la commande n'en demande pas). */
-const needsNotice = (o: Order) => (o.type === 'pro' ? proStageOf(o) !== 'interet' : o.status !== 'attente') && !currentStep(o)?.notified_at;
+// Une commande livrée (reçue) ou annulée est close : plus rien à annoncer au client.
+const closed = (o: Order) => o.status === 'livree' || o.status === 'annulee';
+const needsNotice = (o: Order) => !closed(o) && (o.type === 'pro' ? proStageOf(o) !== 'interet' : o.status !== 'attente') && !currentStep(o)?.notified_at;
 
 /** Message au client pour le statut en cours, prêt à partir par WhatsApp ou par e-mail. */
 function noticeOf(o: Order) {
@@ -265,19 +268,33 @@ function Column({ children }: { children: ReactNode }) {
 // ───────────── Cadre de l'espace : un univers à part, avec ses propres pages
 
 // `phone: false` : sur téléphone, l'onglet passe sous « Plus » (la barre du bas reste courte).
-const TABS = [
-  { to: '/commandes', label: 'Commandes', short: 'Commandes', end: true },
-  { to: '/commandes/paniers', label: 'Paniers', short: 'Paniers', end: false, phone: false, hint: 'Paniers en cours dans l’application' },
-  { to: '/commandes/statuts', label: 'Statuts', short: 'Statuts', end: false },
-  { to: '/commandes/clients', label: 'Clients', short: 'Clients', end: false },
-  { to: '/commandes/statistiques', label: 'Statistiques', short: 'Stats', end: false },
-  { to: '/commandes/livraison', label: 'Livraison', short: 'Livraison', end: false },
-];
+type OrdersTab = { to: string; label: string; short: string; end: boolean; phone?: boolean; hint?: string };
+/** Pages de l'espace commandes : celles des particuliers et celles des pros ne se mélangent pas. */
+const TABS_OF: Record<Space, OrdersTab[]> = {
+  b2c: [
+    { to: '/commandes', label: 'Commandes', short: 'Commandes', end: true },
+    { to: '/commandes/paniers', label: 'Paniers', short: 'Paniers', end: false, phone: false, hint: 'Paniers en cours dans l’application' },
+    { to: '/commandes/statuts', label: 'Statuts', short: 'Statuts', end: false },
+    { to: '/commandes/clients', label: 'Clients', short: 'Clients', end: false },
+    { to: '/commandes/statistiques', label: 'Statistiques', short: 'Stats', end: false },
+    { to: '/commandes/livraison', label: 'Livraison', short: 'Livraison', end: false },
+  ],
+  b2b: [
+    { to: '/commandes', label: 'Demandes', short: 'Demandes', end: true },
+    { to: '/commandes/programmes', label: 'Programmes', short: 'Progr.', end: false },
+    { to: '/commandes/statuts', label: 'Statuts', short: 'Statuts', end: false },
+    { to: '/commandes/clients', label: 'Acheteurs', short: 'Acheteurs', end: false },
+    { to: '/commandes/statistiques', label: 'Statistiques', short: 'Stats', end: false },
+  ],
+};
+const useTabs = () => TABS_OF[useSpace().space].map((t) => ({ ...t, to: sp(t.to) }));
 
 export function OrdersLayout() {
   const { user, canEdit } = useAuth();
   const { pathname } = useLocation();
   const [more, setMore] = useState(false);
+  const TABS = useTabs();
+  const { space } = useSpace();
   const moreTabs = TABS.filter((t) => t.phone === false).map((t) => ({ to: t.to, label: t.label, end: t.end, hint: t.hint ?? '' }));
   const moreActive = moreTabs.some((t) => pathname === t.to || pathname.startsWith(`${t.to}/`));
   return (
@@ -286,13 +303,13 @@ export function OrdersLayout() {
         <Backdrop tint="#C98A2B" />
         <header className="sticky top-0 z-30 border-b border-line bg-[rgba(11,14,9,0.86)] backdrop-blur-md" style={{ paddingTop: 'env(safe-area-inset-top)' }}>
           <div className="mx-auto flex h-16 w-full max-w-[1400px] items-center gap-3 px-4 lg:h-[76px] lg:px-8">
-            <Link to="/" aria-label="Retour à la tour de contrôle" className="press flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-3.5 text-[13.5px] font-bold">
+            <Link to={sp('/')} aria-label="Retour à la tour de contrôle" className="press flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-line bg-surface px-3.5 text-[13.5px] font-bold">
               <span aria-hidden>←</span>
               <span className="hidden min-[430px]:inline">Contrôle</span>
             </Link>
             <span className="flex min-w-0 flex-1 items-center gap-2.5">
               <span className="poster-voice min-w-0 truncate text-[22px] leading-none tracking-[0.1em] lg:text-[28px]">Tropicaura</span>
-              <span className="label-voice shrink-0 text-[12.5px] text-star lg:text-[13.5px]">Commandes</span>
+              <span className="label-voice shrink-0 text-[12.5px] text-star lg:text-[13.5px]">{space === 'b2b' ? 'Demandes · Pros' : 'Commandes · Particuliers'}</span>
             </span>
             <nav aria-label="Pages de l’espace commandes" className="hidden items-center gap-1 lg:flex">
               {TABS.map((tab) => (
@@ -349,6 +366,37 @@ export function OrdersLayout() {
         <ScrollRestoration />
       </motion.div>
     </OrdersProvider>
+  );
+}
+
+// ───────────── Programme d'un acheteur pro
+
+const FREQUENCY_LABEL = { hebdomadaire: 'Chaque semaine', mensuelle: 'Chaque mois', ponctuelle: 'Ponctuelle' } as const;
+const UNIT_LABEL = { kg: 'kg', tonnes: 'tonnes', conteneurs: 'conteneurs' } as const;
+const day = (iso: string | null) => (iso ? new Date(`${iso}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }) : '');
+
+function ProgrammeDetail({ programme: g }: { programme: NonNullable<Order['programme']> }) {
+  const rows: [string, string][] = [
+    ['Quantité totale', `${g.quantity.toLocaleString('fr-FR')} ${UNIT_LABEL[g.unit]}`],
+    ['Période', g.end ? `du ${day(g.start)} au ${day(g.end)}` : `à partir du ${day(g.start)}`],
+    ['Fréquence', FREQUENCY_LABEL[g.frequency]],
+    ['Calibres', g.calibres.join(', ') || '—'],
+    ['Conditionnement', g.packaging || '—'],
+    ['Destination', [g.destination.place, g.destination.country].filter(Boolean).join(', ') || '—'],
+  ];
+  return (
+    <>
+      <h3 className="mt-5 font-display text-[18px] font-semibold">Programme</h3>
+      <dl className="divide-y divide-line">
+        {rows.map(([label, value]) => (
+          <div key={label} className="flex min-h-[48px] items-center justify-between gap-4 py-1.5">
+            <dt className="shrink-0 text-[14px] text-fg-dim">{label}</dt>
+            <dd className="min-w-0 break-words text-right text-[14.5px] font-semibold">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {g.details && <p className="mt-2 rounded-[16px] border border-line bg-surface px-4 py-3 text-[14px] leading-[20px] text-fg-dim">{g.details}</p>}
+    </>
   );
 }
 
@@ -475,7 +523,7 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
   const next = o && FLOW.indexOf(o.status) >= 1 && FLOW.indexOf(o.status) < FLOW.length - 1 ? FLOW[FLOW.indexOf(o.status) + 1] : null;
 
   return (
-    <Sheet open={!!o} onClose={() => (busy ? undefined : (setSure(null), onClose()))} title={o ? `${o.type === 'pro' ? 'Demande' : 'Commande'} ${o.number}` : ''}>
+    <Sheet side open={!!o} onClose={() => (busy ? undefined : (setSure(null), onClose()))} title={o ? `${o.kind === 'programme' ? 'Programme' : o.type === 'pro' ? 'Demande' : 'Commande'} ${o.number}` : ''}>
       {o && (
         <>
           <p className="text-[13px] text-fg-dim">Passée le {dateTime(o.created_at)}</p>
@@ -488,9 +536,11 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
             </div>
           )}
 
+          {o.programme && <ProgrammeDetail programme={o.programme} />}
+
           {o.type === 'pro' && (
             <div className="mt-3">
-              <Notice tone="leaf" title="Demande professionnelle · rien n’est payé dans l’application">
+              <Notice tone="leaf" title={o.kind === 'programme' ? 'Programme · rien n’est payé dans l’application' : 'Demande professionnelle · rien n’est payé dans l’application'}>
                 Le client a envoyé son intérêt. Contactez-le pour convenir des quantités, du prix, du transport et du paiement, puis faites avancer la demande jusqu’au contrat et à la livraison.
               </Notice>
             </div>
@@ -584,7 +634,7 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
                       Envoyer la course
                     </a>
                   ) : canEdit && !courierPhone ? (
-                    <Link to="/commandes/livraison" className={contactLink}>
+                    <Link to={sp('/commandes/livraison')} className={contactLink}>
                       Ajouter son numéro
                     </Link>
                   ) : null}
@@ -637,7 +687,7 @@ function OrderSheet({ order: o, onClose }: { order: Order | null; onClose: () =>
                       {o.gp_at ? 'Renvoyer' : 'Envoyer sur WhatsApp'}
                     </a>
                   ) : canEdit ? (
-                    <Link to="/commandes/livraison" className={contactLink}>
+                    <Link to={sp('/commandes/livraison')} className={contactLink}>
                       Ajouter son numéro
                     </Link>
                   ) : null}
@@ -1030,12 +1080,16 @@ function Frame({ title, accent, subtitle, right, children }: { title: string; ac
 
 // ───────────── Page « Commandes »
 
-export function OrdersList() {
+export function OrdersList({ programmes = false }: { programmes?: boolean }) {
   const { loadedAt } = useOrders();
-  const { list } = useScope();
+  const { space } = useSpace();
+  const pros = space === 'b2b';
+  const scoped = useScope();
+  // Pros : les demandes d'un côté, les programmes de l'autre (mêmes étapes de suivi).
+  const list = pros ? scoped.list.filter((o) => (o.kind === 'programme') === programmes) : scoped.list;
   const [params] = useSearchParams();
   const [status, setStatus] = useState<OrderStatus | 'toutes'>('toutes');
-  const [type, setType] = useState<'tous' | 'particulier' | 'pro'>('tous');
+  const type = 'tous' as 'tous' | 'particulier' | 'pro';
   const [country, setCountry] = useState('');
   const [query, setQuery] = useState('');
   const [openId, setOpenId] = useState<string | null>(params.get('commande'));
@@ -1063,7 +1117,7 @@ export function OrdersList() {
 
   return (
     <Frame
-      title="Commandes"
+      title={pros ? (programmes ? 'Programmes' : 'Demandes') : 'Commandes'}
       subtitle={time ? `Relues toutes les 30 secondes · dernière lecture à ${String(time.getHours()).padStart(2, '0')}h${String(time.getMinutes()).padStart(2, '0')}` : 'Lecture des commandes…'}
       right={<Refresh />}
     >
@@ -1075,18 +1129,7 @@ export function OrdersList() {
       </div>
 
       <div className="px-5 pt-5">
-        <Segmented
-          label="Type de client"
-          full
-          value={type}
-          onChange={setType}
-          options={[
-            { value: 'tous', label: 'Tous' },
-            { value: 'particulier', label: 'Particuliers' },
-            { value: 'pro', label: 'Professionnels' },
-          ]}
-        />
-        <div className="mt-3.5 flex flex-col gap-3 sm:flex-row">
+        <div className="flex flex-col gap-3 sm:flex-row">
           <label className="flex h-12 min-w-0 shrink-0 items-center sm:flex-1 gap-2 rounded-full border border-line bg-surface px-4 transition-colors focus-within:border-leaf">
             <span className="sr-only">Rechercher une commande</span>
             <input
@@ -1145,6 +1188,11 @@ export function OrdersList() {
       <OrderSheet order={opened} onClose={() => setOpenId(null)} />
     </Frame>
   );
+}
+
+/** Espace Pros › Programmes : quantités étalées dans le temps, suivies comme les demandes. */
+export function OrdersProgrammes() {
+  return <OrdersList programmes />;
 }
 
 // ───────────── Page « Statuts » : les commandes en cours, jusqu'à la réception
@@ -1267,7 +1315,8 @@ export function OrdersStatus() {
   const { list } = useScope();
   const { canEdit } = useAuth();
   const toast = useToast();
-  const [type, setType] = useState<Order['type']>('particulier');
+  // L'espace décide : Particuliers = commandes, Pros = demandes et programmes.
+  const type: Order['type'] = useSpace().space === 'b2b' ? 'pro' : 'particulier';
   const [busyId, setBusyId] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -1305,19 +1354,9 @@ export function OrdersStatus() {
   };
 
   return (
-    <Frame title="Statuts" subtitle={`${plural(openCount('particulier') + openCount('pro'), 'commande en cours', 'commandes en cours')}, jusqu’à la réception. Une commande reçue quitte cette page.`}>
+    <Frame title="Statuts" subtitle={type === 'pro' ? `${plural(openCount('pro'), 'demande en cours', 'demandes en cours')}, jusqu’à la livraison. Une demande livrée quitte cette page.` : `${plural(openCount('particulier'), 'commande en cours', 'commandes en cours')}, jusqu’à la réception. Une commande reçue quitte cette page.`}>
       <div className="px-5 pt-4 lg:max-w-[560px]">
-        <Segmented
-          label="Type de client"
-          full
-          value={type}
-          onChange={setType}
-          options={[
-            { value: 'particulier', label: `Particuliers · ${openCount('particulier')}` },
-            { value: 'pro', label: `Grossistes, importateurs · ${openCount('pro')}` },
-          ]}
-        />
-        <p className="px-1 pt-2.5 text-[12.5px] leading-[18px] text-fg-faint">
+        <p className="px-1 text-[12.5px] leading-[18px] text-fg-faint">
           {type === 'pro'
             ? 'Professionnels : rien n’est payé dans l’application. Le client envoie son intérêt ; vous le contactez, puis vous faites avancer sa demande jusqu’au contrat et à la livraison.'
             : 'Particuliers : le paiement est obligatoire. La commande est confirmée quand vous accusez réception du paiement.'}
@@ -1403,9 +1442,10 @@ export function OrdersClients() {
   const shown = needle ? clients.filter((c) => normalize(`${c.name} ${c.latest.customer.name} ${c.latest.customer.email} ${c.latest.address} ${c.latest.country}`).includes(needle)) : clients;
   const opened = clients.find((c) => c.key === openKey) ?? null;
   const pros = clients.filter((c) => c.latest.type === 'pro').length;
+  const proSpace = useSpace().space === 'b2b';
 
   return (
-    <Frame title="Clients" subtitle={`${plural(clients.length, 'client a commandé', 'clients ont commandé')}, dont ${plural(pros, 'professionnel', 'professionnels')}.`}>
+    <Frame title={proSpace ? 'Acheteurs' : 'Clients'} subtitle={proSpace ? `${plural(clients.length, 'acheteur a fait une demande', 'acheteurs ont fait une demande')}.` : `${plural(clients.length, 'client a commandé', 'clients ont commandé')}.`}>
       <div className="px-5 pt-4">
         <label className="flex h-12 items-center gap-2 rounded-full border border-line bg-surface px-4 transition-colors focus-within:border-leaf">
           <span className="sr-only">Rechercher un client</span>
@@ -1612,9 +1652,15 @@ export function OrdersStats() {
             </div>
           </Panel>
 
-          <Panel title="Particuliers et professionnels">
-            <Bar label={`Particuliers · ${plural(data.retail.n, 'commande', 'commandes')}`} value={money(data.retail.amount)} share={data.ordered > 0 ? data.retail.amount / data.ordered : 0} />
-            <Bar label={`Professionnels · ${plural(data.pro.n, 'demande', 'demandes')}`} value={money(data.pro.amount)} share={data.ordered > 0 ? data.pro.amount / data.ordered : 0} tone="bg-star" />
+          <Panel title={data.pro.n > 0 ? 'Demandes et programmes' : 'Commandes'}>
+            {data.pro.n > 0 ? (
+              <>
+                <Bar label={`Demandes · ${plural(data.scoped.filter((o) => o.kind !== 'programme').length, 'demande', 'demandes')}`} value={count(data.scoped.filter((o) => o.kind !== 'programme').length)} share={data.scoped.length > 0 ? data.scoped.filter((o) => o.kind !== 'programme').length / data.scoped.length : 0} tone="bg-star" />
+                <Bar label={`Programmes · ${plural(data.scoped.filter((o) => o.kind === 'programme').length, 'programme', 'programmes')}`} value={count(data.scoped.filter((o) => o.kind === 'programme').length)} share={data.scoped.length > 0 ? data.scoped.filter((o) => o.kind === 'programme').length / data.scoped.length : 0} tone="bg-star" />
+              </>
+            ) : (
+              <Bar label={`Particuliers · ${plural(data.retail.n, 'commande', 'commandes')}`} value={money(data.retail.amount)} share={data.ordered > 0 ? 1 : 0} />
+            )}
           </Panel>
         </div>
 

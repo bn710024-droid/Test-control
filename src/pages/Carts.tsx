@@ -13,6 +13,7 @@ import { ago, amount, count, dateTime, normalize, plural } from '../lib/format';
 import { cx } from '../lib/ui';
 import { CART_STATUS_LABEL, CONTACT_LABEL, cartContactLinks, type CartStatusId, type ContactWay } from '../../shared/carts.js';
 import { countryName } from '../../shared/catalog.js';
+import { sp } from '../lib/space';
 
 // ───────────── Repères
 
@@ -131,7 +132,7 @@ function CartSheet({ cart: c, onClose }: { cart: Cart | null; onClose: () => voi
                   tone="leaf"
                   title={`Transformé en commande ${c.order.number}`}
                   action={
-                    <Link to={`/commandes?commande=${encodeURIComponent(c.order.id)}`} className={contactLink}>
+                    <Link to={sp(`/commandes?commande=${encodeURIComponent(c.order.id)}`)} className={contactLink}>
                       Voir la commande
                     </Link>
                   }
@@ -169,7 +170,7 @@ function CartSheet({ cart: c, onClose }: { cart: Cart | null; onClose: () => voi
                   </a>
                 )}
                 {isClient && (
-                  <Link to={`/commandes/clients?client=${encodeURIComponent(c.id.toLowerCase())}`} className={contactLink}>
+                  <Link to={sp(`/commandes/clients?client=${encodeURIComponent(c.id.toLowerCase())}`)} className={contactLink}>
                     Voir ce client
                   </Link>
                 )}
@@ -415,7 +416,7 @@ export function ClientCart({ accountId }: { accountId: string }) {
     <>
       <h3 className="mt-5 font-display text-[18px] font-semibold">Panier en cours</h3>
       <div className="mt-2.5">
-        <CartRow cart={c} onOpen={() => navigate(`/commandes/paniers?panier=${encodeURIComponent(c.id)}`)} />
+        <CartRow cart={c} onOpen={() => navigate(sp(`/commandes/paniers?panier=${encodeURIComponent(c.id)}`))} />
       </div>
     </>
   );

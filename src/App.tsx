@@ -1,6 +1,6 @@
 import { Suspense, type ReactNode } from 'react';
 import { MotionConfig } from 'framer-motion';
-import { createHashRouter, Navigate, RouterProvider, useLocation } from 'react-router-dom';
+import { createHashRouter, Navigate, Outlet, RouterProvider, useLocation, useParams } from 'react-router-dom';
 import { OPEN_ACCESS } from '../shared/access.js';
 import { UpdateWatcher, lazyScreen } from './components/Update';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -14,6 +14,8 @@ import Login from './pages/Login';
 import NoAccess from './pages/NoAccess';
 import Dashboard from './pages/Dashboard';
 import Products from './pages/Products';
+import SpaceChoice from './pages/SpaceChoice';
+import { SPACES, SpaceContext, rememberSpace, rememberedSpace, setApiSpace, spaceOfSlug } from './lib/space';
 
 // Écrans ouverts à la demande : le premier affichage ne charge que la connexion, le tableau de
 // bord et la liste des produits.
@@ -31,6 +33,7 @@ const OrdersStats = lazyScreen(() => import('./pages/Orders').then((m) => ({ def
 const OrdersStatus = lazyScreen(() => import('./pages/Orders').then((m) => ({ default: m.OrdersStatus })));
 const OrdersDelivery = lazyScreen(() => import('./pages/Orders').then((m) => ({ default: m.OrdersDelivery })));
 const OrdersCarts = lazyScreen(() => import('./pages/Carts').then((m) => ({ default: m.OrdersCarts })));
+const OrdersProgrammes = lazyScreen(() => import('./pages/Orders').then((m) => ({ default: m.OrdersProgrammes })));
 
 const later = (node: ReactNode) => (
   <Suspense
@@ -61,8 +64,33 @@ function Shell() {
   // Compteur de l'onglet « Contrôle » : fiches à compléter et lignes à valider.
   const todo = products.filter((p) => !p.archived && issuesOf(p).length > 0).length + pendingRefs.length;
   const { pathname } = useLocation();
-  if (pathname.startsWith('/commandes')) return later(<OrdersLayout />);
+  if (/^\/(particuliers|pros)\/commandes(\/|$)/.test(pathname)) return later(<OrdersLayout />);
   return <Layout badge={todo} />;
+}
+
+/**
+ * Cadre d'un espace (#/particuliers/… ou #/pros/…) : ses données propres, rechargées à chaque
+ * changement d'espace. Une ancienne adresse sans espace (#/produits/mangue) mène à l'espace mémorisé.
+ */
+function SpaceRoot() {
+  const { espace } = useParams();
+  const { pathname } = useLocation();
+  const space = spaceOfSlug(espace);
+  if (!space) {
+    const home = SPACES[rememberedSpace() ?? 'b2c'].slug;
+    return <Navigate to={`/${home}${pathname}`} replace />;
+  }
+  setApiSpace(space);
+  if (rememberedSpace() !== space) rememberSpace(space);
+  const slug = SPACES[space].slug;
+  const value = { space, slug, label: SPACES[space].label, to: (p: string) => `/${slug}${p === '/' ? '' : p}` };
+  return (
+    <SpaceContext.Provider value={value}>
+      <DataProvider key={space}>
+        <Shell />
+      </DataProvider>
+    </SpaceContext.Provider>
+  );
 }
 
 /** Porte de l'administration : session, puis droits confirmés par le serveur, puis les écrans. */
@@ -85,18 +113,14 @@ function Gate() {
   // Phase de test : on entre directement, tout est modifiable (voir shared/access.js).
   if (OPEN_ACCESS) {
     return (
-      <DataProvider key="ouvert">
-        <Shell />
-      </DataProvider>
+      <Outlet />
     );
   }
   if (loading) return <Splash label="Ouverture de la session…" />;
   // Sans compte : on entre directement, en lecture seule. La connexion ne sert qu'à modifier.
   if (!user) {
     return (
-      <DataProvider key="visite">
-        <Shell />
-      </DataProvider>
+      <Outlet />
     );
   }
   if (access.status === 'idle' || access.status === 'loading') return <Splash label="Vérification des droits…" />;
@@ -114,11 +138,7 @@ function Gate() {
     );
   }
   if (access.role !== 'owner' && access.role !== 'editor') return <NoAccess />;
-  return (
-    <DataProvider key={user.id}>
-      <Shell />
-    </DataProvider>
-  );
+  return <Outlet key={user.id} />;
 }
 
 /** Un écran n'a pas pu s'afficher : on le dit, et on propose de repartir, au lieu d'une page blanche. */
@@ -155,6 +175,12 @@ const router = createHashRouter([
     element: <Gate />,
     errorElement: <Crash />,
     children: [
+      { index: true, element: <SpaceChoice /> },
+      { path: 'espaces', element: <SpaceChoice force /> },
+      {
+        path: ':espace',
+        element: <SpaceRoot />,
+        children: [
       { index: true, element: <Dashboard /> },
       { path: 'produits', element: <Products /> },
       { path: 'produits/nouveau', element: later(<ProductEditor />) },
@@ -170,7 +196,10 @@ const router = createHashRouter([
       { path: 'commandes/statistiques', element: later(<OrdersStats />) },
       { path: 'commandes/statuts', element: later(<OrdersStatus />) },
       { path: 'commandes/livraison', element: later(<OrdersDelivery />) },
+      { path: 'commandes/programmes', element: later(<OrdersProgrammes />) },
       { path: '*', element: <NotFound /> },
+        ],
+      },
     ],
   },
 ]);

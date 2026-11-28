@@ -16,6 +16,7 @@
  */
 import { packContent, packRange } from './catalog.js';
 import { XOF_COUNTRIES, EUR_COUNTRIES } from './zones.js';
+import { PRO_EUROPE, PRO_NORTH_AMERICA, PRO_AFRICA, PRO_GROUPS } from './pro.js';
 
 export const SCHEMA_V2 = 2;
 
@@ -210,6 +211,8 @@ export function filtersOf(list) {
 export function toAppDocument(v1, { demoIds = new Set(), gp = [] } = {}) {
   return {
     schema: SCHEMA_V2,
+    // 'b2c' (particuliers) ou 'b2b' (grossistes et importateurs) : deux catalogues séparés.
+    space: v1.space === 'b2b' ? 'b2b' : 'b2c',
     updatedAt: v1.updatedAt,
     example: v1.example === true,
     country: v1.country ?? null,
@@ -220,6 +223,10 @@ export function toAppDocument(v1, { demoIds = new Set(), gp = [] } = {}) {
     delivery: { gp },
     // Devises des particuliers par pays : franc CFA, euro, sinon dollar (shared/zones.js).
     zones: { XOF: XOF_COUNTRIES, EUR: EUR_COUNTRIES, fallback: 'USD' },
+    // Groupes de prix des pros (shared/pro.js) : la devise d'un acheteur est celle de son groupe.
+    ...(v1.space === 'b2b'
+      ? { proGroups: { groups: PRO_GROUPS, countries: { eu: PRO_EUROPE, na: PRO_NORTH_AMERICA, af: PRO_AFRICA }, fallback: 'monde' } }
+      : null),
     categories: categoriesOf(v1.categories, v1.products),
     filters: filtersOf(v1.filters),
     payments: (v1.payments ?? []).map((p) => ({ ...p, enabled: true })),
